@@ -101,7 +101,7 @@ svg {
 
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 28px;
   padding: 16px;
   background-color: #28282880;
   backdrop-filter: blur(16px);
@@ -112,9 +112,9 @@ svg {
     top: 0;
     right: 0;
     left: auto;
-    width: auto;
-    height: 100vw;
-    padding-top: 72px;
+    width: 180px;
+    height: 100vh;
+    padding: 64px 16px;
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: scroll;
@@ -137,11 +137,11 @@ svg {
 }
 
 .editor-input-label {
-  margin-bottom: 8px;
+  /*margin-bottom: 8px;*/
 }
 
 .editor-input-container {
-  height: 110px;
+  height: 84px;
   display: flex;
   align-items: center;
   align-content: flex-start;
