@@ -1,0 +1,8 @@
+{
+  "short_name": "Brutalita Sans",
+  "name": "Geometric font and web font editor.",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}
