@@ -46,19 +46,20 @@ textarea {
 }
 
 textarea {
+  top: 38px;
   transform-origin: center left;
   transform: scalex(1.01);
   word-break: break-all;
   opacity: 1;
   background-color: #0000;
-  color: #fff0;
+  color: #f000;
   -webkit-appearance: none;
   appearance: none;
   border: none;
   font-size: 23px;
   letter-spacing: 0;
-  font-family: Courier New, monospace;
-  line-height: 29px;
+  font-family: Courier, monospace;
+  line-height: 30px;
   z-index: 100;
   resize: none;
   overflow: auto;
@@ -81,11 +82,20 @@ svg {
   display: block;
   margin: 0;
 }
+.key {
+  color: white;
+  height: 22px;
+  margin-bottom: -4px;
+  margin-right: 4px;
+  margin-top: 12px;
+  width: 10px;
+}
 
 .unknown-char {
   display: block;
   line-height: 20px;
   font-size: 24px;
+  color: red;
 }
 
 .editor-container {
@@ -169,11 +179,8 @@ svg {
   width: 16px;
   transform: translatey(-50%) translatex(-50%);
   border-radius: 16px;
-  opacity: 0.75;
-  position: absolute;
-}
-.editor-dot:hover {
   opacity: 1;
+  position: absolute;
 }
 
 .topnav {

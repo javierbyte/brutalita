@@ -1,4 +1,4 @@
-/* eslint react/prop-types: 0 */
+/* eslint-disable */
 
 import { Fragment, useState, useEffect } from 'react';
 
@@ -6,27 +6,25 @@ import { downloadFont } from './font-maker.js';
 
 import FONT from './font.json';
 
-const DEFAULT_TEXT = `Brutalita Sans V0.4
+const DEFAULT_TEXT = `BRUTALITA SANS V0.4
 
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
 abcdefghijklmnopqrstuvwxyz
 0123456789
 @_.,()?;:!"#$%<>=/+*&[]{}^'
 
--
 
-Brutalita is an experimental font and font editor,
-edit in your browser and download OTF.
+BRUTALITA IS AN EXPERIMENTAL FONT AND FONT EDITOR,
+EDIT IN YOUR BROWSER AND DOWNLOAD AN OPENTYPE FONT.
 
-The name means "little brutal" in spanish.
-Made with SVG and Opentype.JS
+THE NAME MEANS "LITTLE BRUTAL" IN SPANISH.
+MADE WITH SVG AND OPENTYPE.JS
 
-Use the controls on this page!
-> Tap twice to delete a layer.
+USE THE CONTROLS ON THIS PAGE!
+> TAP TWICE TO DELETE A LAYER.
 
--
 
-Made by Javier Borquez
-Send me a message on twitter, @javierbyte`;
+MADE BY @JAVIERBYTE`;
 
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_STROKE_WIDTH = 2;
@@ -56,6 +54,7 @@ function includes(arr, el) {
 function Key({
   char,
   path,
+  custom = false,
   color = 'white',
   fontSize = DEFAULT_FONT_SIZE,
   strokeWidth = DEFAULT_STROKE_WIDTH
@@ -63,24 +62,23 @@ function Key({
   const WIDTH = 0.5 * fontSize;
   const HEIGHT = 1 * fontSize;
   const STROKEWIDTH = strokeWidth;
+  const LOW_STEM_HEIGHT = 4;
 
   const finalPath = path || FONT[char];
 
-  const styles = {
-    marginTop: Math.round(HEIGHT * 0.3),
-    marginBottom: Math.round(HEIGHT * 0.4),
-    marginRight: Math.round(WIDTH * 0.45),
-    width: WIDTH + STROKEWIDTH,
-    height: HEIGHT + STROKEWIDTH,
-    color
-  };
+  const styles = custom
+    ? {
+        width: WIDTH + STROKEWIDTH,
+        height: HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT,
+        marginBottom: -LOW_STEM_HEIGHT,
+        marginRight: 4,
+        marginTop: 12,
+        color
+      }
+    : null;
 
   if (!finalPath) {
-    return (
-      <div className="unknown-char" style={{ ...styles, color: 'red' }}>
-        {char}
-      </div>
-    );
+    return <div className="unknown-char key">{char}</div>;
   }
 
   let corners = {};
@@ -99,8 +97,9 @@ function Key({
 
   return (
     <svg
+      className="key"
       viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${WIDTH + STROKEWIDTH} ${
-        HEIGHT + STROKEWIDTH
+        HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT
       }`}
       style={styles}
     >
@@ -132,11 +131,11 @@ function Key({
 function Editor({ value, onChange }) {
   const EDITOR_ADVANCE = window.innerWidth > 1200;
   const EDITOR_DOT_SIZE = EDITOR_ADVANCE ? 24 : 16;
-  const EDITOR_GAP = EDITOR_ADVANCE ? 48 : 24;
+  const EDITOR_GAP = EDITOR_ADVANCE ? 50 : 26;
 
   const style = {
     margin: EDITOR_DOT_SIZE / 2,
-    height: DOTSY * EDITOR_GAP,
+    height: (DOTSY + (EDITOR_ADVANCE ? 1 : 0)) * EDITOR_GAP,
     width: DOTSX * EDITOR_GAP
   };
 
@@ -158,7 +157,7 @@ function Editor({ value, onChange }) {
               style={{
                 height: EDITOR_DOT_SIZE,
                 width: EDITOR_DOT_SIZE,
-                backgroundColor: includes(value, [x, y]) ? '#fff' : '#999',
+                backgroundColor: includes(value, [x, y]) ? '#fff' : '#808080',
                 left: x * EDITOR_GAP,
                 top: y * EDITOR_GAP
               }}
@@ -170,21 +169,30 @@ function Editor({ value, onChange }) {
 
       {EDITOR_ADVANCE &&
         new Array(DOTSX * 2 + 3).fill('').map((a, x) => {
-          return new Array(DOTSY * 2 + 3).fill('').map((a, y) => {
+          return new Array(DOTSY * 2 + 4).fill('').map((a, y) => {
             const x1 = x / 2 - 0.5;
             const y1 = y / 2 - 0.5;
 
             // do not ovrelap with bigger dots
             if (x1 === Math.round(x1) && y1 === Math.round(y1)) {
+              if (y1 !== DOTSY + 1) {
+                return null;
+              }
+            }
+
+            if (x1 === -0.5) {
+              return null;
+            }
+            if (y1 === -0.5) {
               return null;
             }
 
-            if (x1 === -0.5 || x1 === DOTSX + 0.5) {
+            if (x1 === DOTSX + 0.5) {
               return null;
             }
-            if (y1 === -0.5 || y1 === DOTSY + 0.5) {
-              return null;
-            }
+            // if (y1 === DOTSY + 0.5) {
+            //   return null;
+            // }
 
             const currentDotId = `${x1},${y1}`;
             return (
@@ -198,9 +206,9 @@ function Editor({ value, onChange }) {
                 }}
                 key={currentDotId}
                 style={{
-                  height: EDITOR_DOT_SIZE * 0.6,
-                  width: EDITOR_DOT_SIZE * 0.6,
-                  backgroundColor: includes(value, [x1, y1]) ? '#fff' : '#999',
+                  height: EDITOR_DOT_SIZE - 10,
+                  width: EDITOR_DOT_SIZE - 10,
+                  backgroundColor: includes(value, [x1, y1]) ? '#fff' : '#808080',
                   left: x1 * EDITOR_GAP,
                   top: y1 * EDITOR_GAP
                 }}
@@ -233,8 +241,8 @@ function Editor({ value, onChange }) {
 }
 
 function EditorContainer({ onChange }) {
-  const [editingChar, editingCharSet] = useState('q');
-  const [layers, layersSet] = useState(FONT['q']);
+  const [editingChar, editingCharSet] = useState('Q');
+  const [layers, layersSet] = useState(FONT['Q']);
 
   useEffect(() => {
     let newEditingBase = [[], []];
@@ -276,11 +284,11 @@ function EditorContainer({ onChange }) {
         <div className="editor-input-label">To edit</div>
         <input
           className="editor-input"
-          value={String(editingChar).toUpperCase()}
+          value={String(editingChar)}
           onChange={(e) => {
             let newChar = '';
             try {
-              newChar = e.target.value.slice(-1)[0].toLowerCase();
+              newChar = e.target.value.slice(-1)[0];
             } catch (e) {
               console.error(e);
             }
@@ -292,9 +300,7 @@ function EditorContainer({ onChange }) {
       </div>
       <div className="editor-input-container">
         <div className="editor-input-label">Preview</div>
-        <div style={{ marginLeft: 8, marginTop: -8 }}>
-          <Key path={layers} fontSize={8 * 6} strokeWidth={4} />
-        </div>
+        <Key custom={true} path={layers} fontSize={8 * 6} strokeWidth={4} />
       </div>
       {layers.map((layer, layerIdx) => {
         return (
@@ -316,13 +322,13 @@ function Write({ message }) {
     if (char === '\n') {
       return (
         <Fragment key={keyIdx}>
-          <div style={{ height: 29, width: 0 }} />
+          <div style={{ height: 30, width: 0 }} />
           <div className="type-break" />
         </Fragment>
       );
     }
 
-    return <Key key={keyIdx} char={char.toLowerCase()} />;
+    return <Key key={keyIdx} char={char} />;
   });
 }
 

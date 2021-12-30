@@ -1,3 +1,8 @@
+# 0.4-lowercase
+
+- Added lowercase chars!
+- Added one more half resolution point to the advanced editor.
+
 # 0.4
 
 - More rounded `0`, `Q`, `U`, and shorter `"`.
