@@ -6,7 +6,7 @@ import { downloadFont } from './font-maker.js';
 
 import FONT from './font.json';
 
-const DEFAULT_TEXT = `Brutalita Sans V0.3
+const DEFAULT_TEXT = `Brutalita Sans V0.4
 
 abcdefghijklmnopqrstuvwxyz
 0123456789
@@ -347,8 +347,6 @@ function App() {
     function resize() {
       const width = document.querySelector('body').getBoundingClientRect().width - 32;
       const availableChars = Math.min(Math.floor(width / 14), 60);
-
-      console.log(width, availableChars);
 
       charWidthSet(availableChars);
 

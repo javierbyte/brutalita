@@ -1,3 +1,7 @@
+# 0.4
+
+- More rounded `0`, `Q`, `U`, and shorter `"`.
+
 # 0.3
 
 - Created the "advanced" editor that has half point vertices. Updated most characters to take
