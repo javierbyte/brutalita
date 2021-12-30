@@ -81,15 +81,18 @@ function Key({
     return <div className="unknown-char key">{char}</div>;
   }
 
-  let corners = {};
-  const pathMapped = finalPath.map((lines) =>
-    lines.map(([x, y]) => {
+  let dots = [];
+
+  const pathMapped = finalPath.map((layer) =>
+    layer.map(([x, y]) => {
       const coordX = Math.round((x * WIDTH) / SEGMENTS[0]);
       const coordY = Math.round((y * HEIGHT) / SEGMENTS[1]);
 
       const coordStr = `${coordX},${coordY}`;
 
-      corners[coordStr] = [coordX, coordY];
+      if (layer.length === 1) {
+        dots.push([coordX, coordY]);
+      }
 
       return coordStr;
     })
@@ -103,27 +106,30 @@ function Key({
       }`}
       style={styles}
     >
-      {pathMapped.map((line, lineIdx) => (
-        <polyline
-          key={lineIdx}
-          points={line.join(' ')}
-          strokeWidth={STROKEWIDTH}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-          stroke={color}
-        />
-      ))}
+      {true &&
+        pathMapped.map((line, lineIdx) => (
+          <polyline
+            key={lineIdx}
+            points={line.join(' ')}
+            strokeWidth={STROKEWIDTH}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            fill="none"
+            stroke={color}
+          />
+        ))}
 
-      {Object.keys(corners).map((corner) => (
-        <circle
-          key={corner}
-          cx={corners[corner][0]}
-          cy={corners[corner][1]}
-          r={STROKEWIDTH / 2}
-          fill={color}
-        />
-      ))}
+      {true &&
+        dots.map((dotXY) => (
+          <circle
+            key={`${dotXY[0]}, ${dotXY[1]}`}
+            cx={dotXY[0]}
+            cy={dotXY[1]}
+            r={STROKEWIDTH / 2}
+            fill={color}
+          />
+        ))}
     </svg>
   );
 }
@@ -233,6 +239,7 @@ function Editor({ value, onChange }) {
           fill="none"
           stroke="#fff"
           strokeLinejoin="round"
+          strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
         />
       </svg>
