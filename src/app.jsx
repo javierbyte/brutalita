@@ -126,7 +126,7 @@ function Key({
             key={`${dotXY[0]}, ${dotXY[1]}`}
             cx={dotXY[0]}
             cy={dotXY[1]}
-            r={STROKEWIDTH / 2}
+            r={STROKEWIDTH * 0.75}
             fill={color}
           />
         ))}

@@ -8,7 +8,7 @@ const SCALE_Y = -170;
 const DRIFT_X = 100;
 const DRIFT_Y = 720;
 
-const CIRCLE_SEGMENTS = 12;
+const CIRCLE_SEGMENTS = 16;
 
 function polar2cartesian({ distance, angle }) {
   return {
@@ -85,9 +85,17 @@ function makeGlyph(char, path = []) {
     }
   }
 
+  let uniqueDots = {};
   let uniqueCoords = {};
-  for (const coord of path.flat(1)) {
-    uniqueCoords[coord.join(',')] = coord;
+  for (const layer of path) {
+    for (const coord of layer) {
+      // only one coord per layer means this is a dot
+      if (layer.length === 1) {
+        uniqueDots[coord.join(',')] = coord;
+      } else {
+        uniqueCoords[coord.join(',')] = coord;
+      }
+    }
   }
   for (const uniqueCoordKey of Object.keys(uniqueCoords)) {
     // draw vertice
@@ -96,6 +104,25 @@ function makeGlyph(char, path = []) {
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
         distance: WEIGHT,
+        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS
+      });
+
+      // first point of the circle, move
+      if (j === 0)
+        tmpPath.moveTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+      else
+        tmpPath.lineTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+      j++;
+    }
+  }
+
+  for (const uniqueCoordKey of Object.keys(uniqueDots)) {
+    // draw dot
+    const [x, y] = uniqueDots[uniqueCoordKey];
+    let j = 0;
+    while (j < CIRCLE_SEGMENTS) {
+      const newCoord = polar2cartesian({
+        distance: WEIGHT * 1.5,
         angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS
       });
 
