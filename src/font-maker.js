@@ -8,6 +8,14 @@ const SCALE_Y = -170;
 const DRIFT_X = 100;
 const DRIFT_Y = 720;
 
+const TO_COMBINE = {
+  á: ['a', '´'],
+  é: ['e', '´'],
+  í: ['i', '´'],
+  ó: ['o', '´'],
+  ú: ['u', '´']
+};
+
 const CIRCLE_SEGMENTS = 16;
 
 function polar2cartesian({ distance, angle }) {
@@ -148,6 +156,10 @@ function makeGlyph(char, path = []) {
 }
 
 export function downloadFont(fontSrc) {
+  Object.keys(TO_COMBINE).forEach((char) => {
+    console.log(char);
+    fontSrc[char] = [...fontSrc[TO_COMBINE[char][0]], ...fontSrc[TO_COMBINE[char][1]]];
+  });
   console.log('> Making font', fontSrc);
 
   const notdefGlyph = new Opentype.Glyph({

@@ -17,6 +17,12 @@ body {
   touch-action: pan-y;
 }
 
+:root {
+  --topnav-height: 64px;
+  --separator-color: #444;
+  --topnav-button-height: 32px;
+}
+
 button,
 body {
   font-family: Monaco, monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
@@ -30,23 +36,22 @@ body {
 .type,
 textarea {
   width: calc(100vw - 32px);
-  margin: 0 16px;
-  padding: 64px 0;
+  margin: 0;
+  padding: 14px;
   display: block;
-  top: 32px;
+  top: var(--topnav-height);
   position: absolute;
 }
 
-@media screen and (min-width: 1000px) {
+@media screen and (min-width: 640px) {
   .type,
   textarea {
-    width: calc(100vw - 200px);
-    margin: 0 100px;
+    padding: 28px;
   }
 }
 
 textarea {
-  top: 38px;
+  margin-top: 8px;
   transform-origin: center left;
   transform: scalex(1.01);
   word-break: break-all;
@@ -98,7 +103,7 @@ svg {
   color: red;
 }
 
-.editor-container {
+.sidebar {
   z-index: 200;
   position: fixed;
 
@@ -112,22 +117,26 @@ svg {
   display: flex;
   align-items: center;
   gap: 28px;
-  padding: 16px;
+  padding: 16px 16px 24px;
+  border-left: none;
+  border-top: 1px solid var(--separator-color);
+
   background-color: #28282880;
   backdrop-filter: blur(16px);
 }
 
 @media screen and (min-width: 1000px) {
-  .editor-container {
-    top: 0;
+  .sidebar {
+    top: var(--topnav-height);
     right: 0;
     left: auto;
     width: 180px;
-    height: 100vh;
-    padding: 64px 16px;
+    height: calc(100vh - var(--topnav-height));
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: scroll;
+    border-top: none;
+    border-left: 1px solid var(--separator-color);
   }
 }
 
@@ -188,19 +197,35 @@ svg {
   display: flex;
   align-items: center;
   color: #aaa;
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
-  padding: 8px 12px;
+  padding: calc((var(--topnav-height) - var(--topnav-button-height)) / 2) 12px;
   z-index: 300;
   font-size: 14px;
   width: 100vw;
-  height: auto;
+  height: var(--topnav-height);
   overflow: hidden;
+  border-bottom: 1px solid var(--separator-color);
+
+  background-color: #28282880;
+  backdrop-filter: blur(16px);
+}
+.topnav.-responsive {
+  height: auto;
+  min-height: var(--topnav-height);
+  flex-wrap: wrap;
+}
+.topnav.-responsive .-hide-on-mobile {
+  display: initial !important;
 }
 .topnav button {
   font-size: 14px;
+  height: var(--topnav-button-height);
+  padding: 0 12px;
+  margin: 0;
+  border: 0;
 }
 .topnav a {
   color: #ccc;
@@ -210,6 +235,7 @@ svg {
   background: #333;
   border-bottom: 1px solid #444;
 }
+
 button {
   -webkit-appearance: none;
   background-color: #444;
@@ -223,4 +249,20 @@ button {
 button:hover {
   background-color: #555;
   color: #fff;
+}
+
+.-hide-on-mobile {
+  display: none;
+}
+.-show-only-mobile {
+  display: initial;
+}
+
+@media screen and (min-width: 720px) {
+  .-hide-on-mobile {
+    display: initial;
+  }
+  .-show-only-mobile {
+    display: none;
+  }
 }

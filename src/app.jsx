@@ -1,30 +1,37 @@
 /* eslint-disable */
 
-import { Fragment, useState, useEffect } from 'react';
+import { memo, Fragment, useState, useEffect } from 'react';
 
+import { downloadBlob, uploadBlob } from './blob-utils.js';
 import { downloadFont } from './font-maker.js';
 
-import FONT from './font.json';
+import FONT_SRC from './font.json';
+window.FONT = FONT_SRC;
 
-const DEFAULT_TEXT = `BRUTALITA SANS V0.4
+const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz
+0123456789`;
+const REMAINING_CHARS = Object.keys(window.FONT)
+  .filter((char) => !DISPLAY_CHAR_BASE.includes(char))
+  .join('')
+  .replace(' ', '');
 
-ABCDEFGHIJKLMNOPQRSTUVWXYZ
-abcdefghijklmnopqrstuvwxyz
-0123456789
-@_.,()?;:!"#$%<>=/+*&[]{}^'
+const DEFAULT_TEXT = `BRUTALITA v0.5
 
-
-BRUTALITA IS AN EXPERIMENTAL FONT AND FONT EDITOR,
-EDIT IN YOUR BROWSER AND DOWNLOAD AN OPENTYPE FONT.
-
-THE NAME MEANS "LITTLE BRUTAL" IN SPANISH.
-MADE WITH SVG AND OPENTYPE.JS
-
-USE THE CONTROLS ON THIS PAGE!
-> TAP TWICE TO DELETE A LAYER.
+${DISPLAY_CHAR_BASE}${REMAINING_CHARS}
 
 
-MADE BY @JAVIERBYTE`;
+Brutalita is an experimental font and font editor,
+edit in your browser and download the font.
+
+The name means "little brutal" in Spanish.
+Made with SVG and OpenType.js
+
+Use the controls on this page!
+- Tap twice to delete a layer.
+- Save and restore your progress.
+- This textarea is also editable :)
+
+Made by @javierbyte`;
 
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_STROKE_WIDTH = 2;
@@ -33,25 +40,54 @@ const SEGMENTS = [2, 4];
 const DOTSX = SEGMENTS[0];
 const DOTSY = SEGMENTS[1];
 
-// FILLING THE GAPS
-for (const char in FONT) {
-  for (const line in FONT[char]) {
-    if (FONT[char][line]) {
-      const lastEl = FONT[char][line].slice(-1)[0];
-      if (lastEl === 'X') {
-        FONT[char][line] = [...FONT[char][line].slice(0, -1), FONT[char][line][0]];
-      }
-    }
-  }
-}
-
 function includes(arr, el) {
   return arr.some((elArr) => {
     return elArr[0] === el[0] && elArr[1] === el[1];
   });
 }
 
-function Key({
+function validateFont(fontDefinition) {
+  try {
+    if (!Object.keys(fontDefinition).length) {
+      alert(`No characters found on this file`);
+      return false;
+    }
+
+    for (const char of Object.keys(fontDefinition)) {
+      if (char.length > 1) {
+        alert(`Found invalid char "${char}"`);
+        return false;
+      }
+      for (const layer of fontDefinition[char]) {
+        for (const coord of layer) {
+          if (coord.length !== 2 || typeof coord[0] !== 'number' || typeof coord[1] !== 'number') {
+            alert(`Invalid char definition found in "${char}"`);
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  } catch (e) {
+    alert(`Invalid font file`, e);
+    return false;
+  }
+}
+
+// removes empty layers of font definition
+function cleanFontForExport(fontDefinition) {
+  const orderedChars = Object.keys(fontDefinition).sort((a, b) => {
+    return a.charCodeAt(0) - b.charCodeAt(0);
+  });
+
+  return orderedChars.reduce((acc, key) => {
+    acc[key] = fontDefinition[key].filter((layer) => layer.length);
+    return acc;
+  }, {});
+}
+
+const Key = memo(function Key({
   char,
   path,
   custom = false,
@@ -62,9 +98,9 @@ function Key({
   const WIDTH = 0.5 * fontSize;
   const HEIGHT = 1 * fontSize;
   const STROKEWIDTH = strokeWidth;
-  const LOW_STEM_HEIGHT = 4;
+  const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
 
-  const finalPath = path || FONT[char];
+  const finalPath = path || window.FONT[char];
 
   const styles = custom
     ? {
@@ -106,36 +142,34 @@ function Key({
       }`}
       style={styles}
     >
-      {true &&
-        pathMapped.map((line, lineIdx) => (
-          <polyline
-            key={lineIdx}
-            points={line.join(' ')}
-            strokeWidth={STROKEWIDTH}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            fill="none"
-            stroke={color}
-          />
-        ))}
+      {pathMapped.map((line, lineIdx) => (
+        <polyline
+          key={lineIdx}
+          points={line.join(' ')}
+          strokeWidth={STROKEWIDTH}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          fill="none"
+          stroke={color}
+        />
+      ))}
 
-      {true &&
-        dots.map((dotXY) => (
-          <circle
-            key={`${dotXY[0]}, ${dotXY[1]}`}
-            cx={dotXY[0]}
-            cy={dotXY[1]}
-            r={STROKEWIDTH * 0.75}
-            fill={color}
-          />
-        ))}
+      {dots.map((dotXY) => (
+        <circle
+          key={`${dotXY[0]}, ${dotXY[1]}`}
+          cx={dotXY[0]}
+          cy={dotXY[1]}
+          r={STROKEWIDTH * 0.75}
+          fill={color}
+        />
+      ))}
     </svg>
   );
-}
+});
 
 function Editor({ value, onChange }) {
-  const EDITOR_ADVANCE = window.innerWidth > 1200;
+  const EDITOR_ADVANCE = window.innerWidth > 1000;
   const EDITOR_DOT_SIZE = EDITOR_ADVANCE ? 24 : 16;
   const EDITOR_GAP = EDITOR_ADVANCE ? 50 : 26;
 
@@ -247,24 +281,18 @@ function Editor({ value, onChange }) {
   );
 }
 
-function EditorContainer({ onChange }) {
-  const [editingChar, editingCharSet] = useState('Q');
-  const [layers, layersSet] = useState(FONT['Q']);
+function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
+  const [layers, layersSet] = useState(window.FONT[editingChar]);
 
   useEffect(() => {
     let newEditingBase = [[], []];
 
-    if (FONT[editingChar]) {
-      newEditingBase = FONT[editingChar];
+    if (window.FONT[editingChar]) {
+      newEditingBase = window.FONT[editingChar];
     }
 
     layersSet(newEditingBase);
   }, [editingChar, layersSet]);
-
-  useEffect(() => {
-    FONT[editingChar] = layers;
-    onChange();
-  }, layers);
 
   function onChangeEditor(layerIdx, val) {
     let layersCopy = JSON.parse(JSON.stringify(layers));
@@ -283,31 +311,35 @@ function EditorContainer({ onChange }) {
     layersCopy.push([]);
 
     layersSet(layersCopy);
+    window.FONT[editingChar] = layersCopy;
+    onChange();
   }
 
   return (
-    <div className="editor-container">
-      <div className="editor-input-container">
-        <div className="editor-input-label">To edit</div>
-        <input
-          className="editor-input"
-          value={String(editingChar)}
-          onChange={(e) => {
-            let newChar = '';
-            try {
-              newChar = e.target.value.slice(-1)[0];
-            } catch (e) {
-              console.error(e);
-            }
-            if (newChar) {
-              editingCharSet(newChar);
-            }
-          }}
-        />
-      </div>
-      <div className="editor-input-container">
-        <div className="editor-input-label">Preview</div>
-        <Key custom={true} path={layers} fontSize={8 * 6} strokeWidth={4} />
+    <div className="sidebar">
+      <div style={{ display: 'flex', gap: 12 }}>
+        <div className="editor-input-container">
+          <div className="editor-input-label">To edit</div>
+          <input
+            className="editor-input"
+            value={String(editingChar)}
+            onChange={(e) => {
+              let newChar = '';
+              try {
+                newChar = e.target.value.slice(-1)[0];
+              } catch (e) {
+                console.error(e);
+              }
+              if (newChar) {
+                onChangeEditingChar(newChar);
+              }
+            }}
+          />
+        </div>
+        <div className="editor-input-container">
+          <div className="editor-input-label">Preview</div>
+          <Key custom={true} path={layers} fontSize={8 * 5} strokeWidth={4} />
+        </div>
       </div>
       {layers.map((layer, layerIdx) => {
         return (
@@ -340,14 +372,16 @@ function Write({ message }) {
 }
 
 function App() {
+  const [editingChar, editingCharSet] = useState('Q');
   const [textAreaHeight, textAreaHeightSet] = useState(window.innerHeight);
   const [charWidth, charWidthSet] = useState(64);
   const [text, textSet] = useState(DEFAULT_TEXT);
-  const [timestamp, timestampSet] = useState(new Date().getTime());
+  const [fontChangeTrack, fontChangeTrackSet] = useState(new Date().getTime());
+  const [fontLoadTrack, fontLoadTrackSet] = useState(new Date().getTime() + 1);
+  const [isResponsive, isResponsiveSet] = useState(false);
 
   function onFontChange() {
-    window.FONT = FONT;
-    timestampSet(new Date().getTime());
+    fontChangeTrackSet(new Date().getTime());
   }
 
   useEffect(() => {
@@ -358,7 +392,7 @@ function App() {
 
   useEffect(() => {
     function resize() {
-      const width = document.querySelector('body').getBoundingClientRect().width - 32;
+      const width = document.querySelector('body').getBoundingClientRect().width;
       const availableChars = Math.min(Math.floor(width / 14), 60);
 
       charWidthSet(availableChars);
@@ -385,31 +419,75 @@ function App() {
           textSet(e.target.value);
         }}
       />
-      <div className="type" key={timestamp} style={{ width: 14 * charWidth }}>
+
+      <div key={fontChangeTrack} className="type" style={{ width: 14 * charWidth }}>
         <Write message={text} />
       </div>
 
-      <EditorContainer onChange={onFontChange} />
+      <EditorContainer
+        key={fontLoadTrack}
+        editingChar={editingChar}
+        onChangeEditingChar={editingCharSet}
+        onChange={onFontChange}
+      />
 
-      <div className="topnav">
+      <div className={`topnav ${isResponsive ? '-responsive' : ''}`}>
         <button
           onClick={() => {
-            downloadFont(FONT);
+            isResponsiveSet(!isResponsive);
           }}
+          className="-show-only-mobile"
         >
-          Download Edited
+          Menu
         </button>
         <button
           onClick={() => {
             window.open('Brutalita-Regular.otf');
           }}
         >
-          Download Brutalita
+          Download
+        </button>
+        <button
+          className="-hide-on-mobile"
+          onClick={() => {
+            downloadFont(window.FONT);
+          }}
+        >
+          Download Edited Font
+        </button>
+        <button
+          className="-hide-on-mobile"
+          onClick={() => {
+            downloadBlob(
+              `brutalita-${new Date().getTime()}.json`,
+              JSON.stringify(cleanFontForExport(window.FONT), 0, 2)
+            );
+          }}
+        >
+          Download JSON
+        </button>
+        <button
+          className="-hide-on-mobile"
+          onClick={async () => {
+            try {
+              const blob = await uploadBlob();
+              const json = JSON.parse(blob[0]);
+
+              if (validateFont(json)) {
+                window.FONT = json;
+                fontLoadTrackSet(new Date().getTime());
+                fontChangeTrackSet(new Date().getTime());
+              }
+            } catch (e) {
+              alert(`Unable to load font.json file`, e);
+            }
+          }}
+        >
+          Restore JSON
         </button>
         <div style={{ flex: 1 }} />
-
         <div>
-          {'Made by  '}
+          {'Made by '}
           <a href="https://javier.xyz/">@javierbyte</a>
         </div>
       </div>
