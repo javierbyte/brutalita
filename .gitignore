@@ -2,7 +2,7 @@
 
 # dependencies
 /dist
-/vercel
+.vercel
 /node_modules
 /.pnp
 .pnp.js
