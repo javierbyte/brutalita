@@ -6,21 +6,32 @@ import { downloadBlob, uploadBlob } from './blob-utils.js';
 import { downloadFont } from './font-maker.js';
 
 import FONT_SRC from './font.json';
+
+// import { renderToStaticMarkup } from 'react-dom/server';
+
 window.FONT = FONT_SRC;
 
-const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz
-0123456789`;
+const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
 const REMAINING_CHARS = Object.keys(window.FONT)
   .filter((char) => !DISPLAY_CHAR_BASE.includes(char))
   .join('')
-  .replace(' ', '');
+  .replace(' ', '')
+  .replace('\n', '');
+
+const ALL_CHARS = [...DISPLAY_CHAR_BASE, ...REMAINING_CHARS];
+const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
+ALL_CHARS.splice(SPLIT, 0, `\n`);
+ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
+
+// const SPLIT = Math.floor(ALL_CHARS.length / 2) + 1;
+// ALL_CHARS.splice(SPLIT, 0, `\n`);
 
 const DEFAULT_TEXT = `BRUTALITA v0.5
 
-${DISPLAY_CHAR_BASE}${REMAINING_CHARS}
+${ALL_CHARS.join(``)}
 
 
-Brutalita is an experimental font and font editor,
+Brutalita is an experimental font and editor,
 edit in your browser and download the font.
 
 The name means "little brutal" in Spanish.
@@ -87,6 +98,52 @@ function cleanFontForExport(fontDefinition) {
   }, {});
 }
 
+// <img
+//   style={{ zIndex: 100000, margin: 128 }}
+//   src={`data:image/svg+xml;base64,${btoa(
+//     renderSvg(DEFAULT_TEXT.split(`\n`).slice(0, 9).join(`\n`))
+//   )}`}
+// />
+
+// function renderSvg(message) {
+//   const customWidth = 10;
+//   const customSpace = 4;
+//   const customRowHeight = 22 + 10;
+//   const renderWidth = 800;
+//   const renderHeight = 450;
+//   let paddingTop = 0;
+//   let paddingLeft = 30;
+
+//   const longestRow = Math.max(...message.split(`\n`).map((row) => row.length));
+
+//   paddingLeft = (renderWidth - longestRow * (customWidth + customSpace)) / 2;
+//   paddingTop = (renderHeight - message.split(`\n`).length * customRowHeight) / 2;
+
+//   return renderToStaticMarkup(
+//     <svg
+//       xmlns="http://www.w3.org/2000/svg"
+//       fill="#282828"
+//       width={renderWidth}
+//       height={renderHeight}
+//       viewBox={`0 0 ${renderWidth} ${renderHeight}`}
+//       style={{ backgroundColor: '#111' }}
+//     >
+//       {message.split('\n').map((row, rowIdx) =>
+//         row.split('').map((char, idx) => {
+//           return (
+//             <svg
+//               x={idx * customWidth + idx * customSpace + paddingLeft}
+//               y={rowIdx * customRowHeight + paddingTop}
+//             >
+//               <Key custom char={char} />
+//             </svg>
+//           );
+//         })
+//       )}
+//     </svg>
+//   );
+// }
+
 const Key = memo(function Key({
   char,
   path,
@@ -140,6 +197,8 @@ const Key = memo(function Key({
       viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${WIDTH + STROKEWIDTH} ${
         HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT
       }`}
+      width={custom ? styles.width : undefined}
+      height={custom ? styles.height : undefined}
       style={styles}
     >
       {pathMapped.map((line, lineIdx) => (
@@ -246,8 +305,8 @@ function Editor({ value, onChange }) {
                 }}
                 key={currentDotId}
                 style={{
-                  height: EDITOR_DOT_SIZE - 10,
-                  width: EDITOR_DOT_SIZE - 10,
+                  height: EDITOR_DOT_SIZE - 8,
+                  width: EDITOR_DOT_SIZE - 8,
                   backgroundColor: includes(value, [x1, y1]) ? '#fff' : '#808080',
                   left: x1 * EDITOR_GAP,
                   top: y1 * EDITOR_GAP
@@ -494,5 +553,7 @@ function App() {
     </Fragment>
   );
 }
+
+// console.log(renderSvg(DEFAULT_TEXT.split(`\n`).slice(0, 9).join(`\n`)));
 
 export default App;

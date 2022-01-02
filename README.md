@@ -1,6 +1,6 @@
 # Brutalita
 
-[![brutalita](public/brutalita.jpg)](https://brutalita.com/)
+[![brutalita](public/brutalita-cover.svg)](https://brutalita.com/)
 
 Brutalita is an experimental font and font editor, edit in your browser and download OTF.
 

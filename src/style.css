@@ -104,6 +104,7 @@ svg {
 }
 
 .sidebar {
+  user-select: none;
   z-index: 200;
   position: fixed;
 
@@ -193,6 +194,7 @@ svg {
 }
 
 .topnav {
+  user-select: none;
   gap: 8px;
   display: flex;
   align-items: center;
