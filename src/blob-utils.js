@@ -47,7 +47,7 @@ export function downloadBlob(name = 'file.txt', data) {
     new MouseEvent('click', {
       bubbles: true,
       cancelable: true,
-      view: window
+      view: window,
     })
   );
 

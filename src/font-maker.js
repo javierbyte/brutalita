@@ -13,7 +13,7 @@ const TO_COMBINE = {
   é: ['e', '´'],
   í: ['i', '´'],
   ó: ['o', '´'],
-  ú: ['u', '´']
+  ú: ['u', '´'],
 };
 
 const CIRCLE_SEGMENTS = 16;
@@ -21,14 +21,14 @@ const CIRCLE_SEGMENTS = 16;
 function polar2cartesian({ distance, angle }) {
   return {
     x: distance * Math.cos(angle),
-    y: distance * Math.sin(angle)
+    y: distance * Math.sin(angle),
   };
 }
 
 function cartesian2polar({ x, y }) {
   return {
     distance: Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2)),
-    angle: Math.atan2(y, x)
+    angle: Math.atan2(y, x),
   };
 }
 
@@ -37,7 +37,9 @@ function makeGlyph(char, path = []) {
   const tmpPath = new Opentype.Path({ fill: 'null', stroke: 'black' });
 
   // clean path and layers from empty arrays
-  path = path.filter((layer) => layer.length).map((layer) => layer.filter((coord) => coord.length));
+  path = path
+    .filter((layer) => layer.length)
+    .map((layer) => layer.filter((coord) => coord.length));
 
   if (path.length) {
     for (const layer of path) {
@@ -51,7 +53,7 @@ function makeGlyph(char, path = []) {
         const polar = cartesian2polar({ x: x2 - x1, y: y2 - y1 });
         const newCoord = polar2cartesian({
           distance: WEIGHT,
-          angle: polar.angle - Math.PI / 2
+          angle: polar.angle - Math.PI / 2,
         });
 
         tmpPath.moveTo(
@@ -112,14 +114,20 @@ function makeGlyph(char, path = []) {
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
         distance: WEIGHT,
-        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS
+        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
       if (j === 0)
-        tmpPath.moveTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+        tmpPath.moveTo(
+          (x + newCoord.x) * SCALE_X + DRIFT_X,
+          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+        );
       else
-        tmpPath.lineTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+        tmpPath.lineTo(
+          (x + newCoord.x) * SCALE_X + DRIFT_X,
+          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+        );
       j++;
     }
   }
@@ -131,14 +139,20 @@ function makeGlyph(char, path = []) {
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
         distance: WEIGHT * 1.5,
-        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS
+        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
       if (j === 0)
-        tmpPath.moveTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+        tmpPath.moveTo(
+          (x + newCoord.x) * SCALE_X + DRIFT_X,
+          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+        );
       else
-        tmpPath.lineTo((x + newCoord.x) * SCALE_X + DRIFT_X, (y + newCoord.y) * SCALE_Y + DRIFT_Y);
+        tmpPath.lineTo(
+          (x + newCoord.x) * SCALE_X + DRIFT_X,
+          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+        );
       j++;
     }
   }
@@ -147,7 +161,7 @@ function makeGlyph(char, path = []) {
     name: char,
     unicode: char.charCodeAt(0),
     advanceWidth: 600,
-    path: tmpPath
+    path: tmpPath,
   });
 
   tmpGlyph.addUnicode(char.toUpperCase().charCodeAt(0));
@@ -158,7 +172,10 @@ function makeGlyph(char, path = []) {
 export function downloadFont(fontSrc) {
   Object.keys(TO_COMBINE).forEach((char) => {
     console.log(char);
-    fontSrc[char] = [...fontSrc[TO_COMBINE[char][0]], ...fontSrc[TO_COMBINE[char][1]]];
+    fontSrc[char] = [
+      ...fontSrc[TO_COMBINE[char][0]],
+      ...fontSrc[TO_COMBINE[char][1]],
+    ];
   });
   console.log('> Making font', fontSrc);
 
@@ -166,7 +183,7 @@ export function downloadFont(fontSrc) {
     name: '.notdef',
     unicode: 0,
     advanceWidth: 600,
-    path: new Opentype.Path()
+    path: new Opentype.Path(),
   });
 
   const newGlyphs = Object.keys(fontSrc).map((char) => {
@@ -183,7 +200,7 @@ export function downloadFont(fontSrc) {
     unitsPerEm: 1000,
     ascender: 1000,
     descender: -200,
-    glyphs: glyphs
+    glyphs: glyphs,
   });
   font.download();
 }

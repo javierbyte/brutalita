@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint react/prop-types: 0 */
 
 import { memo, Fragment, useState, useEffect } from 'react';
 
@@ -7,12 +7,12 @@ import { downloadFont } from './font-maker.js';
 
 import FONT_SRC from './font.json';
 
-// import { renderToStaticMarkup } from 'react-dom/server';
-
-window.FONT = FONT_SRC;
+const STATE = {
+  font: FONT_SRC,
+};
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
-const REMAINING_CHARS = Object.keys(window.FONT)
+const REMAINING_CHARS = Object.keys(STATE.font)
   .filter((char) => !DISPLAY_CHAR_BASE.includes(char))
   .join('')
   .replace(' ', '')
@@ -23,9 +23,6 @@ const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-// const SPLIT = Math.floor(ALL_CHARS.length / 2) + 1;
-// ALL_CHARS.splice(SPLIT, 0, `\n`);
-
 const DEFAULT_TEXT = `BRUTALITA v0.5
 
 ${ALL_CHARS.join(``)}
@@ -34,13 +31,13 @@ ${ALL_CHARS.join(``)}
 Brutalita is an experimental font and editor,
 edit in your browser and download the font.
 
-The name means "little brutal" in Spanish.
-Made with SVG and OpenType.js
-
 Use the controls on this page!
-- Tap twice to delete a layer.
+- Download the original font or your custom edition.
 - Save and restore your progress.
 - This textarea is also editable :)
+
+The name means "little brutal" in Spanish.
+Made with SVG and OpenType.js
 
 Made by @javierbyte`;
 
@@ -71,7 +68,11 @@ function validateFont(fontDefinition) {
       }
       for (const layer of fontDefinition[char]) {
         for (const coord of layer) {
-          if (coord.length !== 2 || typeof coord[0] !== 'number' || typeof coord[1] !== 'number') {
+          if (
+            coord.length !== 2 ||
+            typeof coord[0] !== 'number' ||
+            typeof coord[1] !== 'number'
+          ) {
             alert(`Invalid char definition found in "${char}"`);
             return false;
           }
@@ -98,66 +99,20 @@ function cleanFontForExport(fontDefinition) {
   }, {});
 }
 
-// <img
-//   style={{ zIndex: 100000, margin: 128 }}
-//   src={`data:image/svg+xml;base64,${btoa(
-//     renderSvg(DEFAULT_TEXT.split(`\n`).slice(0, 9).join(`\n`))
-//   )}`}
-// />
-
-// function renderSvg(message) {
-//   const customWidth = 10;
-//   const customSpace = 4;
-//   const customRowHeight = 22 + 10;
-//   const renderWidth = 800;
-//   const renderHeight = 450;
-//   let paddingTop = 0;
-//   let paddingLeft = 30;
-
-//   const longestRow = Math.max(...message.split(`\n`).map((row) => row.length));
-
-//   paddingLeft = (renderWidth - longestRow * (customWidth + customSpace)) / 2;
-//   paddingTop = (renderHeight - message.split(`\n`).length * customRowHeight) / 2;
-
-//   return renderToStaticMarkup(
-//     <svg
-//       xmlns="http://www.w3.org/2000/svg"
-//       fill="#282828"
-//       width={renderWidth}
-//       height={renderHeight}
-//       viewBox={`0 0 ${renderWidth} ${renderHeight}`}
-//       style={{ backgroundColor: '#111' }}
-//     >
-//       {message.split('\n').map((row, rowIdx) =>
-//         row.split('').map((char, idx) => {
-//           return (
-//             <svg
-//               x={idx * customWidth + idx * customSpace + paddingLeft}
-//               y={rowIdx * customRowHeight + paddingTop}
-//             >
-//               <Key custom char={char} />
-//             </svg>
-//           );
-//         })
-//       )}
-//     </svg>
-//   );
-// }
-
 const Key = memo(function Key({
   char,
   path,
   custom = false,
   color = 'white',
   fontSize = DEFAULT_FONT_SIZE,
-  strokeWidth = DEFAULT_STROKE_WIDTH
+  strokeWidth = DEFAULT_STROKE_WIDTH,
 }) {
   const WIDTH = 0.5 * fontSize;
   const HEIGHT = 1 * fontSize;
   const STROKEWIDTH = strokeWidth;
   const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
 
-  const finalPath = path || window.FONT[char];
+  const finalPath = path || STATE.font[char];
 
   const styles = custom
     ? {
@@ -166,7 +121,7 @@ const Key = memo(function Key({
         marginBottom: -LOW_STEM_HEIGHT,
         marginRight: 4,
         marginTop: 12,
-        color
+        color,
       }
     : null;
 
@@ -194,9 +149,9 @@ const Key = memo(function Key({
   return (
     <svg
       className="key"
-      viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${WIDTH + STROKEWIDTH} ${
-        HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT
-      }`}
+      viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${
+        WIDTH + STROKEWIDTH
+      } ${HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT}`}
       width={custom ? styles.width : undefined}
       height={custom ? styles.height : undefined}
       style={styles}
@@ -232,10 +187,15 @@ function Editor({ value, onChange }) {
   const EDITOR_DOT_SIZE = EDITOR_ADVANCE ? 24 : 16;
   const EDITOR_GAP = EDITOR_ADVANCE ? 50 : 26;
 
+  const EDITOR_CONTROLS_HEIGHT = 24;
+
   const style = {
-    margin: EDITOR_DOT_SIZE / 2,
+    marginTop: EDITOR_DOT_SIZE / 2,
+    marginLeft: EDITOR_DOT_SIZE / 2,
+    marginRight: EDITOR_DOT_SIZE / 2,
+    marginBottom: EDITOR_DOT_SIZE / 2 + EDITOR_CONTROLS_HEIGHT,
     height: (DOTSY + (EDITOR_ADVANCE ? 1 : 0)) * EDITOR_GAP,
-    width: DOTSX * EDITOR_GAP
+    width: DOTSX * EDITOR_GAP,
   };
 
   return (
@@ -258,7 +218,7 @@ function Editor({ value, onChange }) {
                 width: EDITOR_DOT_SIZE,
                 backgroundColor: includes(value, [x, y]) ? '#fff' : '#808080',
                 left: x * EDITOR_GAP,
-                top: y * EDITOR_GAP
+                top: y * EDITOR_GAP,
               }}
               className="editor-dot"
             />
@@ -278,20 +238,15 @@ function Editor({ value, onChange }) {
                 return null;
               }
             }
-
             if (x1 === -0.5) {
               return null;
             }
             if (y1 === -0.5) {
               return null;
             }
-
             if (x1 === DOTSX + 0.5) {
               return null;
             }
-            // if (y1 === DOTSY + 0.5) {
-            //   return null;
-            // }
 
             const currentDotId = `${x1},${y1}`;
             return (
@@ -307,9 +262,11 @@ function Editor({ value, onChange }) {
                 style={{
                   height: EDITOR_DOT_SIZE - 8,
                   width: EDITOR_DOT_SIZE - 8,
-                  backgroundColor: includes(value, [x1, y1]) ? '#fff' : '#808080',
+                  backgroundColor: includes(value, [x1, y1])
+                    ? '#fff'
+                    : '#808080',
                   left: x1 * EDITOR_GAP,
-                  top: y1 * EDITOR_GAP
+                  top: y1 * EDITOR_GAP,
                 }}
                 className="editor-dot"
               />
@@ -323,7 +280,7 @@ function Editor({ value, onChange }) {
           top: -EDITOR_GAP,
           left: -EDITOR_GAP,
           height: (DOTSY + 2) * EDITOR_GAP,
-          width: (DOTSX + 2) * EDITOR_GAP
+          width: (DOTSX + 2) * EDITOR_GAP,
         }}
       >
         <polyline
@@ -336,18 +293,27 @@ function Editor({ value, onChange }) {
           vectorEffect="non-scaling-stroke"
         />
       </svg>
+      <div className="editor-controls">
+        <button
+          onClick={() => {
+            onChange([]);
+          }}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
 
 function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
-  const [layers, layersSet] = useState(window.FONT[editingChar]);
+  const [layers, layersSet] = useState(STATE.font[editingChar]);
 
   useEffect(() => {
     let newEditingBase = [[], []];
 
-    if (window.FONT[editingChar]) {
-      newEditingBase = window.FONT[editingChar];
+    if (STATE.font[editingChar]) {
+      newEditingBase = STATE.font[editingChar];
     }
 
     layersSet(newEditingBase);
@@ -357,12 +323,13 @@ function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
     let layersCopy = JSON.parse(JSON.stringify(layers));
     layersCopy[layerIdx] = val.filter((el) => el.length);
 
-    // clear on doble click
+    // prevent adding the same point twice
     if (layersCopy[layerIdx].slice(-2).length === 2) {
       if (
-        layersCopy[layerIdx].slice(-2)[0].join(',') === layersCopy[layerIdx].slice(-2)[1].join(',')
+        layersCopy[layerIdx].slice(-2)[0].join(',') ===
+        layersCopy[layerIdx].slice(-2)[1].join(',')
       ) {
-        layersCopy[layerIdx] = [];
+        layersCopy[layerIdx] = layersCopy[layerIdx].slice(0, -2);
       }
     }
 
@@ -370,7 +337,7 @@ function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
     layersCopy.push([]);
 
     layersSet(layersCopy);
-    window.FONT[editingChar] = layersCopy;
+    STATE.font[editingChar] = layersCopy;
     onChange();
   }
 
@@ -378,7 +345,7 @@ function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
     <div className="sidebar">
       <div style={{ display: 'flex', gap: 12 }}>
         <div className="editor-input-container">
-          <div className="editor-input-label">To edit</div>
+          <div className="editor-input-label">Editing</div>
           <input
             className="editor-input"
             value={String(editingChar)}
@@ -451,7 +418,9 @@ function App() {
 
   useEffect(() => {
     function resize() {
-      const width = document.querySelector('body').getBoundingClientRect().width;
+      const width = document
+        .querySelector('body')
+        .getBoundingClientRect().width;
       const availableChars = Math.min(Math.floor(width / 14), 60);
 
       charWidthSet(availableChars);
@@ -479,7 +448,11 @@ function App() {
         }}
       />
 
-      <div key={fontChangeTrack} className="type" style={{ width: 14 * charWidth }}>
+      <div
+        key={fontChangeTrack}
+        className="type"
+        style={{ width: 14 * charWidth }}
+      >
         <Write message={text} />
       </div>
 
@@ -504,22 +477,22 @@ function App() {
             window.open('Brutalita-Regular.otf');
           }}
         >
-          Download
+          Download<span className="-hide-on-mobile">{` Brutalita`}</span>
         </button>
         <button
           className="-hide-on-mobile"
           onClick={() => {
-            downloadFont(window.FONT);
+            downloadFont(STATE.font);
           }}
         >
-          Download Edited Font
+          Download Custom
         </button>
         <button
           className="-hide-on-mobile"
           onClick={() => {
             downloadBlob(
               `brutalita-${new Date().getTime()}.json`,
-              JSON.stringify(cleanFontForExport(window.FONT), 0, 2)
+              JSON.stringify(cleanFontForExport(STATE.font), 0, 2)
             );
           }}
         >
@@ -532,10 +505,12 @@ function App() {
               const blob = await uploadBlob();
               const json = JSON.parse(blob[0]);
 
+              console.log(json);
+
               if (validateFont(json)) {
-                window.FONT = json;
+                STATE.font = json;
                 fontLoadTrackSet(new Date().getTime());
-                fontChangeTrackSet(new Date().getTime());
+                fontChangeTrackSet(new Date().getTime() + 1);
               }
             } catch (e) {
               alert(`Unable to load font.json file`, e);
@@ -546,14 +521,19 @@ function App() {
         </button>
         <div style={{ flex: 1 }} />
         <div>
-          {'Made by '}
-          <a href="https://javier.xyz/">@javierbyte</a>
+          <a
+            className="-hide-on-mobile"
+            href="https://github.com/javierbyte/brutalita"
+          >
+            Github Repo
+          </a>
+        </div>
+        <div>
+          <a href="https://twitter.com/javierbyte">by @javierbyte</a>
         </div>
       </div>
     </Fragment>
   );
 }
-
-// console.log(renderSvg(DEFAULT_TEXT.split(`\n`).slice(0, 9).join(`\n`)));
 
 export default App;
