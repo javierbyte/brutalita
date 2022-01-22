@@ -164,8 +164,6 @@ function makeGlyph(char, path = []) {
     path: tmpPath,
   });
 
-  tmpGlyph.addUnicode(char.toUpperCase().charCodeAt(0));
-
   return tmpGlyph;
 }
 
