@@ -80,6 +80,11 @@ textarea:active {
   outline: none;
 }
 
+textarea::selection {
+  background-color: #e74c3c80;
+  color: transparent;
+}
+
 .type {
   display: flex;
   flex-wrap: wrap;
