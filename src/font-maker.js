@@ -57,8 +57,8 @@ function makeGlyph(char, path = []) {
         });
 
         tmpPath.moveTo(
-          (x1 - newCoord.x * 0) * SCALE_X + DRIFT_X,
-          (y1 - newCoord.y * 0) * SCALE_Y + DRIFT_Y
+          (x1 - newCoord.x) * SCALE_X + DRIFT_X,
+          (y1 - newCoord.y) * SCALE_Y + DRIFT_Y
         );
         tmpPath.lineTo(
           (x1 + newCoord.x) * SCALE_X + DRIFT_X,
@@ -67,23 +67,6 @@ function makeGlyph(char, path = []) {
         tmpPath.lineTo(
           (x2 + newCoord.x) * SCALE_X + DRIFT_X,
           (y2 + newCoord.y) * SCALE_Y + DRIFT_Y
-        );
-        tmpPath.lineTo(
-          (x2 - newCoord.x * 0) * SCALE_X + DRIFT_X,
-          (y2 - newCoord.y * 0) * SCALE_Y + DRIFT_Y
-        );
-
-        tmpPath.moveTo(
-          (x1 - newCoord.x) * SCALE_X + DRIFT_X,
-          (y1 - newCoord.y) * SCALE_Y + DRIFT_Y
-        );
-        tmpPath.lineTo(
-          (x1 + newCoord.x * 0) * SCALE_X + DRIFT_X,
-          (y1 + newCoord.y * 0) * SCALE_Y + DRIFT_Y
-        );
-        tmpPath.lineTo(
-          (x2 + newCoord.x * 0) * SCALE_X + DRIFT_X,
-          (y2 + newCoord.y * 0) * SCALE_Y + DRIFT_Y
         );
         tmpPath.lineTo(
           (x2 - newCoord.x) * SCALE_X + DRIFT_X,
@@ -103,7 +86,52 @@ function makeGlyph(char, path = []) {
       if (layer.length === 1) {
         uniqueDots[coord.join(',')] = coord;
       } else {
-        uniqueCoords[coord.join(',')] = coord;
+        /* I'll try to find this point as an intersection of two different lines */
+        let found = false;
+
+        for (const layer of path) {
+          let i = 0;
+          while (i < layer.length - 1 && !found) {
+            const j = i + 1;
+
+            if (layer[i][0] === layer[j][0] && layer[j][0] === coord[0]) {
+              if (
+                Math.min(layer[i][1], layer[j][1]) < coord[1] &&
+                Math.max(layer[i][1], layer[j][1]) > coord[1]
+              ) {
+                found = true;
+              }
+            }
+
+            if (layer[i][1] === layer[j][1] && layer[j][1] === coord[1]) {
+              if (
+                Math.min(layer[i][0], layer[j][0]) < coord[0] &&
+                Math.max(layer[i][0], layer[j][0]) > coord[0]
+              ) {
+                found = true;
+              }
+            }
+
+            if (layer[i][1] !== layer[j][1] && layer[j][0] !== coord[0]) {
+              const diff0 = layer[j][0] - layer[i][0];
+              const diff1 = layer[j][1] - layer[i][1];
+
+              const progress0 = (coord[0] - layer[i][0]) / diff0;
+
+              if (progress0 * diff1 === coord[1] - layer[i][1]) {
+                if (
+                  Math.min(layer[i][0], layer[j][0]) < coord[0] &&
+                  Math.max(layer[i][0], layer[j][0]) > coord[0]
+                ) {
+                  found = true;
+                }
+              }
+            }
+            i++;
+          }
+        }
+
+        if (!found) uniqueCoords[coord.join(',')] = coord;
       }
     }
   }
@@ -113,28 +141,29 @@ function makeGlyph(char, path = []) {
     let j = 0;
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
-        distance: WEIGHT,
+        distance: WEIGHT * 0.96,
         angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
-      if (j === 0)
+      if (j === 0) {
         tmpPath.moveTo(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
-      else
+      } else {
         tmpPath.lineTo(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
+      }
       j++;
     }
   }
 
-  for (const uniqueCoordKey of Object.keys(uniqueDots)) {
+  for (const dotCoordKey of Object.keys(uniqueDots)) {
     // draw dot
-    const [x, y] = uniqueDots[uniqueCoordKey];
+    const [x, y] = uniqueDots[dotCoordKey];
     let j = 0;
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
