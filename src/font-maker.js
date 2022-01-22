@@ -34,7 +34,7 @@ function cartesian2polar({ x, y }) {
 
 function makeGlyph(char, path = []) {
   // console.log('> Making glyph', char, char.charCodeAt(0), path);
-  const tmpPath = new Opentype.Path({ fill: 'null', stroke: 'black' });
+  const tmpPath = new Opentype.Path();
 
   // clean path and layers from empty arrays
   path = path
