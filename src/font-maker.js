@@ -1,4 +1,5 @@
 import Opentype from 'opentype.js';
+import unicodeCsvSrc from './lib/named-character-references.csv';
 
 const PRODUCTION = window.location.search.includes('production');
 
@@ -18,6 +19,22 @@ const TO_COMBINE = {
 
 const CIRCLE_SEGMENTS = 16;
 
+async function getUnicodeCharNames() {
+  return fetch(unicodeCsvSrc)
+    .then((response) => response.text())
+    .then((dataRaw) => {
+      return dataRaw
+        .trim()
+        .split(`\n`)
+        .map((e) => e.split(','))
+        .reduce((res, row) => {
+          const unicodeNumber = parseInt(row[1], 16);
+          res[unicodeNumber] = row[0];
+          return res;
+        }, {});
+    });
+}
+
 function polar2cartesian({ distance, angle }) {
   return {
     x: distance * Math.cos(angle),
@@ -32,7 +49,7 @@ function cartesian2polar({ x, y }) {
   };
 }
 
-function makeGlyph(char, path = []) {
+function makeGlyph(char, name, unicode, path = []) {
   // console.log('> Making glyph', char, char.charCodeAt(0), path);
   const tmpPath = new Opentype.Path();
 
@@ -186,6 +203,8 @@ function makeGlyph(char, path = []) {
     }
   }
 
+  console.log('>> MAKING glyph,', { char, name, unicode });
+
   const tmpGlyph = new Opentype.Glyph({
     name: char,
     unicode: char.charCodeAt(0),
@@ -196,7 +215,7 @@ function makeGlyph(char, path = []) {
   return tmpGlyph;
 }
 
-export function downloadFont(fontSrc) {
+export async function downloadFont(fontSrc) {
   Object.keys(TO_COMBINE).forEach((char) => {
     console.log(char);
     fontSrc[char] = [
@@ -204,7 +223,9 @@ export function downloadFont(fontSrc) {
       ...fontSrc[TO_COMBINE[char][1]],
     ];
   });
-  console.log('> Making font', fontSrc);
+  console.log('>> MAKING font', fontSrc);
+
+  const unicodeCharNames = await getUnicodeCharNames();
 
   const notdefGlyph = new Opentype.Glyph({
     name: '.notdef',
@@ -214,7 +235,9 @@ export function downloadFont(fontSrc) {
   });
 
   const newGlyphs = Object.keys(fontSrc).map((char) => {
-    return makeGlyph(char, fontSrc[char]);
+    const unicode = char.charCodeAt(0);
+    const name = unicodeCharNames[unicode] || char;
+    return makeGlyph(char, name, unicode, fontSrc[char]);
   });
 
   const glyphs = [notdefGlyph, ...newGlyphs];
