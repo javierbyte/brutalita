@@ -1,25 +1,30 @@
+let pendingCallback = null;
+const inputFileElement = document.createElement('input');
+inputFileElement.setAttribute('type', 'file');
+inputFileElement.setAttribute('multiple', false);
+inputFileElement.setAttribute('accept', '.json');
+
+inputFileElement.addEventListener(
+  'change',
+  async (event) => {
+    const { files } = event.target;
+    if (!files) {
+      return;
+    }
+
+    const filePromises = [...files].map((file) => file.text());
+
+    if (pendingCallback) {
+      pendingCallback(await Promise.all(filePromises));
+    }
+  },
+  false
+);
+
 export function uploadBlob() {
   return new Promise((resolve) => {
-    const inputFileElement = document.createElement('input');
-    inputFileElement.setAttribute('type', 'file');
-    inputFileElement.setAttribute('multiple', false);
-    inputFileElement.setAttribute('accept', '.json');
-
-    inputFileElement.addEventListener(
-      'change',
-      async (event) => {
-        const { files } = event.target;
-        if (!files) {
-          return;
-        }
-
-        const filePromises = [...files].map((file) => file.text());
-
-        resolve(await Promise.all(filePromises));
-      },
-      false
-    );
     window.requestAnimationFrame(() => {
+      pendingCallback = resolve;
       inputFileElement.click();
     });
   });
