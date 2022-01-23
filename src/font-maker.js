@@ -1,4 +1,6 @@
 import Opentype from 'opentype.js';
+import polygonClipping from 'polygon-clipping';
+
 import unicodeCsvSrc from './lib/named-character-references.csv';
 
 const PRODUCTION = window.location.search.includes('production');
@@ -9,13 +11,13 @@ const SCALE_Y = -170;
 const DRIFT_X = 100;
 const DRIFT_Y = 720;
 
-const TO_COMBINE = {
-  á: ['a', '´'],
-  é: ['e', '´'],
-  í: ['i', '´'],
-  ó: ['o', '´'],
-  ú: ['u', '´'],
-};
+// const TO_COMBINE = {
+//   á: ['a', '´'],
+//   é: ['e', '´'],
+//   í: ['i', '´'],
+//   ó: ['o', '´'],
+//   ú: ['u', '´'],
+// };
 
 const CIRCLE_SEGMENTS = 16;
 
@@ -49,9 +51,33 @@ function cartesian2polar({ x, y }) {
   };
 }
 
+function definePolygon() {
+  let multiPolygon = [];
+  let currentPolygon = [];
+
+  return {
+    start(x, y) {
+      currentPolygon = [[x, y]];
+    },
+    line(x, y) {
+      currentPolygon.push([x, y]);
+    },
+    close() {
+      currentPolygon.push(currentPolygon[0]);
+      multiPolygon.push(currentPolygon);
+    },
+    get() {
+      return multiPolygon;
+    },
+    getUnion() {
+      const arrMulti = multiPolygon.map((e) => [e]);
+      return polygonClipping.union(arrMulti);
+    },
+  };
+}
+
 function makeGlyph(char, name, unicode, path = []) {
-  // console.log('> Making glyph', char, char.charCodeAt(0), path);
-  const tmpPath = new Opentype.Path();
+  const glyphPolygon = definePolygon();
 
   // clean path and layers from empty arrays
   path = path
@@ -73,22 +99,23 @@ function makeGlyph(char, name, unicode, path = []) {
           angle: polar.angle - Math.PI / 2,
         });
 
-        tmpPath.moveTo(
+        glyphPolygon.start(
           (x1 - newCoord.x) * SCALE_X + DRIFT_X,
           (y1 - newCoord.y) * SCALE_Y + DRIFT_Y
         );
-        tmpPath.lineTo(
+        glyphPolygon.line(
           (x1 + newCoord.x) * SCALE_X + DRIFT_X,
           (y1 + newCoord.y) * SCALE_Y + DRIFT_Y
         );
-        tmpPath.lineTo(
+        glyphPolygon.line(
           (x2 + newCoord.x) * SCALE_X + DRIFT_X,
           (y2 + newCoord.y) * SCALE_Y + DRIFT_Y
         );
-        tmpPath.lineTo(
+        glyphPolygon.line(
           (x2 - newCoord.x) * SCALE_X + DRIFT_X,
           (y2 - newCoord.y) * SCALE_Y + DRIFT_Y
         );
+        glyphPolygon.close();
 
         i++;
       }
@@ -158,24 +185,25 @@ function makeGlyph(char, name, unicode, path = []) {
     let j = 0;
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
-        distance: WEIGHT * 0.96,
+        distance: WEIGHT,
         angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
       if (j === 0) {
-        tmpPath.moveTo(
+        glyphPolygon.start(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
       } else {
-        tmpPath.lineTo(
+        glyphPolygon.line(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
       }
       j++;
     }
+    glyphPolygon.close();
   }
 
   for (const dotCoordKey of Object.keys(uniqueDots)) {
@@ -189,21 +217,45 @@ function makeGlyph(char, name, unicode, path = []) {
       });
 
       // first point of the circle, move
-      if (j === 0)
-        tmpPath.moveTo(
+      if (j === 0) {
+        glyphPolygon.start(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
-      else
-        tmpPath.lineTo(
+      } else {
+        glyphPolygon.line(
           (x + newCoord.x) * SCALE_X + DRIFT_X,
           (y + newCoord.y) * SCALE_Y + DRIFT_Y
         );
+      }
       j++;
+    }
+    glyphPolygon.close();
+  }
+
+  // console.info({
+  //   char,
+  //   polygon: glyphPolygon.get(),
+  //   union: glyphPolygon.getUnion(),
+  // });
+
+  const unionPolygon = glyphPolygon.getUnion();
+  const tmpPath = new Opentype.Path();
+  for (const polygon of unionPolygon) {
+    for (const layer of polygon) {
+      for (const coordIndex in layer) {
+        const coord = layer[coordIndex];
+
+        if (coordIndex === '0') {
+          tmpPath.moveTo(coord[0], coord[1]);
+        } else {
+          tmpPath.lineTo(coord[0], coord[1]);
+        }
+      }
     }
   }
 
-  console.log('>> MAKING glyph,', { char, name, unicode });
+  // console.log('>> MAKING glyph,', { char, name, unicode });
 
   const tmpGlyph = new Opentype.Glyph({
     name: char,
@@ -216,13 +268,13 @@ function makeGlyph(char, name, unicode, path = []) {
 }
 
 export async function downloadFont(fontSrc) {
-  Object.keys(TO_COMBINE).forEach((char) => {
-    console.log(char);
-    fontSrc[char] = [
-      ...fontSrc[TO_COMBINE[char][0]],
-      ...fontSrc[TO_COMBINE[char][1]],
-    ];
-  });
+  // Object.keys(TO_COMBINE).forEach((char) => {
+  //   console.log(char);
+  //   fontSrc[char] = [
+  //     ...fontSrc[TO_COMBINE[char][0]],
+  //     ...fontSrc[TO_COMBINE[char][1]],
+  //   ];
+  // });
   console.log('>> MAKING font', fontSrc);
 
   const unicodeCharNames = await getUnicodeCharNames();

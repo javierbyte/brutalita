@@ -6,6 +6,7 @@
   "homepage": "https://brutalita.com",
   "dependencies": {
     "opentype.js": "^1.3.4",
+    "polygon-clipping": "^0.15.3",
     "react": "^18.0.0-beta-24dd07bd2-20211208",
     "react-dom": "^18.0.0-beta-24dd07bd2-20211208",
     "react-scripts": "^5.0.0"

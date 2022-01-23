@@ -1,8 +1,14 @@
+# 0.6
+
+- Added polygon-clipping algorithm by @mfogel to make the font smaller and
+  cleaner.
+- Added unicode name table.
+
 # 0.5
 
 - Added lowercase chars!
-- Added one more half resolution point to the advanced editor at the bottom to the descender to go
-  up to half a point lower.
+- Added one more half resolution point to the advanced editor at the bottom to
+  the descender to go up to half a point lower.
 - Points that are alone in a layer are now 50% bigger.
 - Redesigned `*`, `%` and dots and characters with dots.
 
@@ -12,8 +18,8 @@
 
 # 0.3
 
-- Created the "advanced" editor that has half point vertices. Updated most characters to take
-  advantage of this.
+- Created the "advanced" editor that has half point vertices. Updated most
+  characters to take advantage of this.
 
 # 0.2
 

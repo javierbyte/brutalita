@@ -23,7 +23,7 @@ const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-const DEFAULT_TEXT = `BRUTALITA v0.5
+const DEFAULT_TEXT = `BRUTALITA v0.6
 
 ${ALL_CHARS.join(``)}
 
