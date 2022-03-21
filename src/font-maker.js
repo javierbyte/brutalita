@@ -67,7 +67,7 @@ function definePolygon() {
       multiPolygon.push(currentPolygon);
     },
     get() {
-      return multiPolygon;
+      return [multiPolygon];
     },
     getUnion() {
       const arrMulti = multiPolygon.map((e) => [e]);
