@@ -17,8 +17,15 @@ body {
   touch-action: pan-y;
 }
 
+body,
+html,
+select,
+option {
+  font-size: 24px;
+}
+
 :root {
-  --topnav-height: 64px;
+  --topnav-height: 44px;
   --separator-color: #444;
   --topnav-button-height: 32px;
 }
@@ -27,6 +34,7 @@ button,
 body {
   font-family: Monaco, monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     'Roboto', sans-serif;
+  color: #ccc;
 }
 
 * {
@@ -35,6 +43,24 @@ body {
 
 a {
   display: block;
+  text-decoration: none;
+  color: #74b9ff;
+}
+a::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 6px;
+  background: #74b9ff15;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: -6px;
+  z-index: -1;
+}
+
+a:hover {
+  color: #0984e3;
 }
 
 .type,
@@ -176,7 +202,6 @@ svg {
   align-content: flex-start;
   flex-direction: column;
   gap: 4px;
-  color: #808080;
   text-transform: uppercase;
   font-size: 12px;
 }
@@ -213,20 +238,18 @@ svg {
 
 .topnav {
   user-select: none;
-  gap: 8px;
   display: flex;
   align-items: center;
-  color: #aaa;
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
-  padding: calc((var(--topnav-height) - var(--topnav-button-height)) / 2) 12px;
+  padding: 0 8px;
   z-index: 300;
-  font-size: 14px;
+  font-size: 15px;
   width: 100vw;
   height: var(--topnav-height);
-  overflow: hidden;
+  gap: 4px;
   border-bottom: 1px solid var(--separator-color);
 
   background-color: #28282880;
@@ -240,34 +263,40 @@ svg {
 .topnav.-responsive .-hide-on-mobile {
   display: initial !important;
 }
-.topnav button {
-  font-size: 14px;
-  height: var(--topnav-button-height);
-  padding: 0 12px;
-  margin: 0;
-  border: 0;
-  color: #ccc;
+
+.jbx-menu {
+  padding: 0 10px;
+  height: var(--topnav-height);
+  line-height: var(--topnav-height);
+  position: relative;
+  cursor: pointer;
 }
-.topnav a {
-  font-size: 14px;
-  height: var(--topnav-button-height);
-  padding: 0 12px;
-  margin: 0;
-  border: 0;
-  padding: 8px;
-  line-height: 1;
-  margin: 0;
-  color: #ccc;
-  text-decoration: none;
-  white-space: nowrap;
-  border: 1px solid #444;
+.jbx-menu:hover {
+  background: #333;
 }
-.topnav a:hover {
+
+.jbx-menu.-open {
+  background-color: #111;
+}
+
+.jbx-menu-options {
+  background: #111;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 250px;
+}
+
+.jbx-menu-option {
+  padding: 0 10px;
+  border-bottom: 1px solid #333;
+}
+
+.jbx-menu-option:hover {
   background: #000;
 }
 
 button {
-  color: #ccc;
   -webkit-appearance: none;
   background-color: #444;
   border: none;

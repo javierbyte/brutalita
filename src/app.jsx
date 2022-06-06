@@ -1,6 +1,6 @@
 /* eslint react/prop-types: 0 */
 
-import { memo, Fragment, useState, useEffect } from 'react';
+import { memo, Fragment, useState, useEffect, useRef } from 'react';
 
 import { downloadBlob, uploadBlob } from './blob-utils.js';
 import { downloadFont } from './font-maker.js';
@@ -38,6 +38,7 @@ Use the controls on this page!
 
 The name means "little brutal" in Spanish.
 Made with SVG and OpenType.js
+
 
 Made by @javierbyte`;
 
@@ -397,6 +398,78 @@ function Write({ message }) {
   });
 }
 
+const useClickOutside = (ref, callback) => {
+  const handleClick = (e) => {
+    if (ref.current && !ref.current.contains(e.target)) {
+      callback();
+    }
+  };
+  useEffect(() => {
+    document.addEventListener('click', handleClick);
+    return () => {
+      document.removeEventListener('click', handleClick);
+    };
+  });
+};
+
+function Menu({ children, options = {} }) {
+  const [open, openSet] = useState(false);
+  const ref = useRef();
+
+  const classList = [`jbx-menu`, open && '-open'].filter((e) => e).join(' ');
+
+  useClickOutside(ref, () => {
+    openSet(false);
+  });
+
+  return (
+    <div
+      ref={ref}
+      onClick={() => {
+        openSet(!open);
+      }}
+      className={classList}
+    >
+      {children}
+      {open && (
+        <div
+          className="jbx-menu-options"
+          onChange={async (evt) => {
+            await options[evt.target.value]();
+          }}
+          value="TITLE"
+        >
+          {Object.keys(options).map((name) => {
+            if (typeof options[name] === 'function') {
+              return (
+                <div
+                  className="jbx-menu-option"
+                  value={name}
+                  key={name}
+                  onClick={options[name]}
+                >
+                  {name}
+                </div>
+              );
+            } else {
+              return (
+                <a
+                  className="jbx-menu-option"
+                  value={name}
+                  key={name}
+                  href={options[name]}
+                >
+                  {name}
+                </a>
+              );
+            }
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [editingChar, editingCharSet] = useState('Q');
   const [textAreaHeight, textAreaHeightSet] = useState(window.innerHeight);
@@ -404,7 +477,6 @@ function App() {
   const [text, textSet] = useState(DEFAULT_TEXT);
   const [fontChangeTrack, fontChangeTrackSet] = useState(new Date().getTime());
   const [fontLoadTrack, fontLoadTrackSet] = useState(new Date().getTime() + 1);
-  const [isResponsive, isResponsiveSet] = useState(false);
 
   function onFontChange() {
     fontChangeTrackSet(new Date().getTime());
@@ -463,75 +535,55 @@ function App() {
         onChange={onFontChange}
       />
 
-      <div className={`topnav ${isResponsive ? '-responsive' : ''}`}>
-        <button
-          onClick={() => {
-            isResponsiveSet(!isResponsive);
-          }}
-          className="-show-only-mobile"
-        >
-          Menu
-        </button>
-        <button
-          onClick={() => {
-            window.open('Brutalita-Regular.otf');
-          }}
-        >
-          Download<span className="-hide-on-mobile">{` Brutalita`}</span>
-        </button>
-        <button
-          className="-hide-on-mobile"
-          onClick={() => {
-            downloadFont(STATE.font);
-          }}
-        >
-          Download Custom
-        </button>
-        <button
-          className="-hide-on-mobile"
-          onClick={() => {
-            downloadBlob(
-              `brutalita-${new Date().getTime()}.json`,
-              JSON.stringify(cleanFontForExport(STATE.font), 0, 2)
-            );
-          }}
-        >
-          Download JSON
-        </button>
-        <button
-          className="-hide-on-mobile"
-          onClick={async () => {
-            try {
-              const blob = await uploadBlob();
-              const json = JSON.parse(blob[0]);
+      <nav className={`topnav`}>
+        <Menu
+          options={{
+            'Export Config': () => {
+              downloadBlob(
+                `brutalita-${new Date().getTime()}.json`,
+                JSON.stringify(cleanFontForExport(STATE.font), 0, 2)
+              );
+            },
+            'Restore Config': async () => {
+              try {
+                const blob = await uploadBlob();
+                const json = JSON.parse(blob[0]);
 
-              console.log(json);
-
-              if (validateFont(json)) {
-                STATE.font = json;
-                fontLoadTrackSet(new Date().getTime());
-                fontChangeTrackSet(new Date().getTime() + 1);
+                if (validateFont(json)) {
+                  STATE.font = json;
+                  fontLoadTrackSet(new Date().getTime());
+                  fontChangeTrackSet(new Date().getTime() + 1);
+                }
+              } catch (e) {
+                alert(`Unable to load font.json file`, e);
               }
-            } catch (e) {
-              alert(`Unable to load font.json file`, e);
-            }
+            },
           }}
         >
-          Restore JSON
-        </button>
+          {`File`}
+        </Menu>
+        <Menu
+          options={{
+            'Download edited font': () => {
+              downloadFont(STATE.font);
+            },
+            'Download original font': () => {
+              window.open('Brutalita-Regular.otf');
+            },
+          }}
+        >
+          {`Download`}
+        </Menu>
+        <Menu
+          options={{
+            'Github Repo': 'https://github.com/javierbyte/brutalita',
+          }}
+        >
+          {`About`}
+        </Menu>
         <div style={{ flex: 1 }} />
-        <div>
-          <a
-            className="-hide-on-mobile"
-            href="https://github.com/javierbyte/brutalita"
-          >
-            Github Repo
-          </a>
-        </div>
-        <div>
-          <a href="https://twitter.com/javierbyte">by @javierbyte</a>
-        </div>
-      </div>
+        <a href="https://twitter.com/javierbyte">Made by Javier</a>
+      </nav>
     </Fragment>
   );
 }
