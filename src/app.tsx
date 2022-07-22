@@ -9,16 +9,28 @@ import FONT_SRC from './font.json';
 
 import type { ReactNode, RefObject } from 'react';
 
-type CharLayer = number[][];
+type CharLayer = [number, number][];
 type CharLayers = CharLayer[];
-type FontDefinition = {
+export type FontDefinition = {
   [char: string]: CharLayers;
 };
+
+function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
+  const typedFont: FontDefinition = {};
+
+  for (const char in fontSrc) {
+    typedFont[char] = fontSrc[char].map((layer) =>
+      layer.map((poly) => [poly[0], poly[1]])
+    );
+  }
+
+  return typedFont;
+}
 
 const STATE: {
   font: FontDefinition;
 } = {
-  font: FONT_SRC,
+  font: fontSrcToTypedFont(FONT_SRC),
 };
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
@@ -348,7 +360,7 @@ function EditorContainer({
       newEditingBase = STATE.font[editingChar];
     }
 
-    layersSet(newEditingBase);
+    layersSet(newEditingBase as CharLayers);
   }, [editingChar, layersSet]);
 
   function onChangeEditor(layerIdx: number, val: CharLayer) {

@@ -1,7 +1,8 @@
 import Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
+import { FontDefinition } from './app';
 
-import unicodeCsvSrc from './lib/named-character-references.csv';
+// import unicodeCsvSrc from './lib/named-character-references.csv';
 
 const PRODUCTION = window.location.search.includes('production');
 
@@ -21,45 +22,53 @@ const DRIFT_Y = 720;
 
 const CIRCLE_SEGMENTS = 16;
 
-async function getUnicodeCharNames() {
-  return fetch(unicodeCsvSrc)
-    .then((response) => response.text())
-    .then((dataRaw) => {
-      return dataRaw
-        .trim()
-        .split(`\n`)
-        .map((e) => e.split(','))
-        .reduce((res, row) => {
-          const unicodeNumber = parseInt(row[1], 16);
-          res[unicodeNumber] = row[0];
-          return res;
-        }, {});
-    });
-}
+// async function getUnicodeCharNames() {
+//   return fetch(unicodeCsvSrc)
+//     .then((response) => response.text())
+//     .then((dataRaw) => {
+//       return dataRaw
+//         .trim()
+//         .split(`\n`)
+//         .map((e) => e.split(','))
+//         .reduce((res: { [key: string]: string }, row) => {
+//           const unicodeNumber = parseInt(row[1], 16);
+//           res[unicodeNumber] = row[0];
+//           return res;
+//         }, {});
+//     });
+// }
 
-function polar2cartesian({ distance, angle }) {
+function polar2cartesian({
+  distance,
+  angle,
+}: {
+  distance: number;
+  angle: number;
+}) {
   return {
     x: distance * Math.cos(angle),
     y: distance * Math.sin(angle),
   };
 }
 
-function cartesian2polar({ x, y }) {
+function cartesian2polar({ x, y }: { x: number; y: number }) {
   return {
     distance: Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2)),
     angle: Math.atan2(y, x),
   };
 }
 
+type polygon = [number, number][];
+
 function definePolygon() {
-  let multiPolygon = [];
-  let currentPolygon = [];
+  let multiPolygon: polygon[] = [];
+  let currentPolygon: polygon = [];
 
   return {
-    start(x, y) {
+    start(x: number, y: number) {
       currentPolygon = [[x, y]];
     },
-    line(x, y) {
+    line(x: number, y: number) {
       currentPolygon.push([x, y]);
     },
     close() {
@@ -76,7 +85,7 @@ function definePolygon() {
   };
 }
 
-function makeGlyph(char, name, unicode, path = []) {
+function makeGlyph(char: string, path: polygon[] = []) {
   const glyphPolygon = definePolygon();
 
   // clean path and layers from empty arrays
@@ -122,8 +131,8 @@ function makeGlyph(char, name, unicode, path = []) {
     }
   }
 
-  let uniqueDots = {};
-  let uniqueCoords = {};
+  let uniqueDots: { [key: string]: [number, number] } = {};
+  let uniqueCoords: { [key: string]: [number, number] } = {};
   for (const layer of path) {
     for (const coord of layer) {
       // only one coord per layer means this is a dot
@@ -267,7 +276,7 @@ function makeGlyph(char, name, unicode, path = []) {
   return tmpGlyph;
 }
 
-export async function downloadFont(fontSrc) {
+export async function downloadFont(fontSrc: FontDefinition) {
   // Object.keys(TO_COMBINE).forEach((char) => {
   //   console.log(char);
   //   fontSrc[char] = [
@@ -277,7 +286,7 @@ export async function downloadFont(fontSrc) {
   // });
   console.log('>> MAKING font', fontSrc);
 
-  const unicodeCharNames = await getUnicodeCharNames();
+  // const unicodeCharNames = await getUnicodeCharNames();
 
   const notdefGlyph = new Opentype.Glyph({
     name: '.notdef',
@@ -287,9 +296,7 @@ export async function downloadFont(fontSrc) {
   });
 
   const newGlyphs = Object.keys(fontSrc).map((char) => {
-    const unicode = char.charCodeAt(0);
-    const name = unicodeCharNames[unicode] || char;
-    return makeGlyph(char, name, unicode, fontSrc[char]);
+    return makeGlyph(char, fontSrc[char]);
   });
 
   const glyphs = [notdefGlyph, ...newGlyphs];
