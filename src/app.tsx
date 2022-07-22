@@ -2,13 +2,35 @@
 
 import { memo, Fragment, useState, useEffect, useRef } from 'react';
 
-import { downloadBlob, uploadBlob } from './blob-utils.js';
-import { downloadFont } from './font-maker.js';
+import { downloadBlob, uploadBlob } from './blob-utils';
+import { downloadFont } from './font-maker';
 
 import FONT_SRC from './font.json';
 
-const STATE = {
-  font: FONT_SRC,
+import type { ReactNode, RefObject } from 'react';
+
+type CharLayer = [number, number][];
+type CharLayers = CharLayer[];
+export type FontDefinition = {
+  [char: string]: CharLayers;
+};
+
+function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
+  const typedFont: FontDefinition = {};
+
+  for (const char in fontSrc) {
+    typedFont[char] = fontSrc[char].map((layer) =>
+      layer.map((poly) => [poly[0], poly[1]])
+    );
+  }
+
+  return typedFont;
+}
+
+const STATE: {
+  font: FontDefinition;
+} = {
+  font: fontSrcToTypedFont(FONT_SRC),
 };
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
@@ -49,13 +71,13 @@ const SEGMENTS = [2, 4];
 const DOTSX = SEGMENTS[0];
 const DOTSY = SEGMENTS[1];
 
-function includes(arr, el) {
+function includes(arr: CharLayer, el: number[]) {
   return arr.some((elArr) => {
     return elArr[0] === el[0] && elArr[1] === el[1];
   });
 }
 
-function validateFont(fontDefinition) {
+function validateFont(fontDefinition: FontDefinition) {
   try {
     if (!Object.keys(fontDefinition).length) {
       alert(`No characters found on this file`);
@@ -83,18 +105,18 @@ function validateFont(fontDefinition) {
 
     return true;
   } catch (e) {
-    alert(`Invalid font file`, e);
+    alert(`Invalid font file.`);
     return false;
   }
 }
 
 // removes empty layers of font definition
-function cleanFontForExport(fontDefinition) {
+function cleanFontForExport(fontDefinition: FontDefinition) {
   const orderedChars = Object.keys(fontDefinition).sort((a, b) => {
     return a.charCodeAt(0) - b.charCodeAt(0);
   });
 
-  return orderedChars.reduce((acc, key) => {
+  return orderedChars.reduce((acc: FontDefinition, key) => {
     acc[key] = fontDefinition[key].filter((layer) => layer.length);
     return acc;
   }, {});
@@ -107,13 +129,20 @@ const Key = memo(function Key({
   color = 'white',
   fontSize = DEFAULT_FONT_SIZE,
   strokeWidth = DEFAULT_STROKE_WIDTH,
+}: {
+  char?: string;
+  path?: CharLayers;
+  custom?: true | false;
+  color?: string;
+  fontSize?: number;
+  strokeWidth?: number;
 }) {
   const WIDTH = 0.5 * fontSize;
   const HEIGHT = 1 * fontSize;
   const STROKEWIDTH = strokeWidth;
   const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
 
-  const finalPath = path || STATE.font[char];
+  const finalPath = path || STATE.font[char as string];
 
   const styles = custom
     ? {
@@ -124,13 +153,13 @@ const Key = memo(function Key({
         marginTop: 12,
         color,
       }
-    : null;
+    : {};
 
   if (!finalPath) {
     return <div className="unknown-char key">{char}</div>;
   }
 
-  let dots = [];
+  let dots: [number, number][] = [];
 
   const pathMapped = finalPath.map((layer) =>
     layer.map(([x, y]) => {
@@ -153,8 +182,8 @@ const Key = memo(function Key({
       viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${
         WIDTH + STROKEWIDTH
       } ${HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT}`}
-      width={custom ? styles.width : undefined}
-      height={custom ? styles.height : undefined}
+      width={styles ? styles.width : undefined}
+      height={styles ? styles.height : undefined}
       style={styles}
     >
       {pathMapped.map((line, lineIdx) => (
@@ -183,7 +212,13 @@ const Key = memo(function Key({
   );
 });
 
-function Editor({ value, onChange }) {
+function Editor({
+  value,
+  onChange,
+}: {
+  value: CharLayer;
+  onChange: (arg0: CharLayer) => void;
+}) {
   const EDITOR_ADVANCE = window.innerWidth > 1000;
   const EDITOR_DOT_SIZE = EDITOR_ADVANCE ? 24 : 16;
   const EDITOR_GAP = EDITOR_ADVANCE ? 50 : 26;
@@ -201,8 +236,8 @@ function Editor({ value, onChange }) {
 
   return (
     <div className="editor" style={style}>
-      {new Array(DOTSX + 1).fill('').map((a, x) => {
-        return new Array(DOTSY + 1).fill('').map((a, y) => {
+      {new Array(DOTSX + 1).fill('').map((_1, x) => {
+        return new Array(DOTSY + 1).fill('').map((_1, y) => {
           const currentDotId = `${x},${y}`;
           return (
             <div
@@ -228,8 +263,8 @@ function Editor({ value, onChange }) {
       })}
 
       {EDITOR_ADVANCE &&
-        new Array(DOTSX * 2 + 3).fill('').map((a, x) => {
-          return new Array(DOTSY * 2 + 4).fill('').map((a, y) => {
+        new Array(DOTSX * 2 + 3).fill('').map((_1, x) => {
+          return new Array(DOTSY * 2 + 4).fill('').map((_1, y) => {
             const x1 = x / 2 - 0.5;
             const y1 = y / 2 - 0.5;
 
@@ -307,38 +342,46 @@ function Editor({ value, onChange }) {
   );
 }
 
-function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
+function EditorContainer({
+  onChange,
+  editingChar,
+  onChangeEditingChar,
+}: {
+  onChange: () => void;
+  editingChar: string;
+  onChangeEditingChar: (arg0: string) => void;
+}) {
   const [layers, layersSet] = useState(STATE.font[editingChar]);
 
   useEffect(() => {
-    let newEditingBase = [[], []];
+    let newEditingBase = [[[0, 0]]];
 
     if (STATE.font[editingChar]) {
       newEditingBase = STATE.font[editingChar];
     }
 
-    layersSet(newEditingBase);
+    layersSet(newEditingBase as CharLayers);
   }, [editingChar, layersSet]);
 
-  function onChangeEditor(layerIdx, val) {
-    let layersCopy = JSON.parse(JSON.stringify(layers));
-    layersCopy[layerIdx] = val.filter((el) => el.length);
+  function onChangeEditor(layerIdx: number, val: CharLayer) {
+    let charLayersCopy: CharLayers = JSON.parse(JSON.stringify(layers));
+    charLayersCopy[layerIdx] = val.filter((el) => el.length);
 
     // prevent adding the same point twice
-    if (layersCopy[layerIdx].slice(-2).length === 2) {
+    if (charLayersCopy[layerIdx].slice(-2).length === 2) {
       if (
-        layersCopy[layerIdx].slice(-2)[0].join(',') ===
-        layersCopy[layerIdx].slice(-2)[1].join(',')
+        charLayersCopy[layerIdx].slice(-2)[0].join(',') ===
+        charLayersCopy[layerIdx].slice(-2)[1].join(',')
       ) {
-        layersCopy[layerIdx] = layersCopy[layerIdx].slice(0, -2);
+        charLayersCopy[layerIdx] = charLayersCopy[layerIdx].slice(0, -2);
       }
     }
 
-    layersCopy = layersCopy.filter((layer) => layer.length);
-    layersCopy.push([]);
+    charLayersCopy = charLayersCopy.filter((layer) => layer.length);
+    charLayersCopy.push([]);
 
-    layersSet(layersCopy);
-    STATE.font[editingChar] = layersCopy;
+    layersSet(charLayersCopy);
+    STATE.font[editingChar] = charLayersCopy;
     onChange();
   }
 
@@ -368,7 +411,7 @@ function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
           <Key custom={true} path={layers} fontSize={8 * 5} strokeWidth={4} />
         </div>
       </div>
-      {layers.map((layer, layerIdx) => {
+      {layers.map((_1, layerIdx) => {
         return (
           <Editor
             key={layerIdx}
@@ -383,24 +426,31 @@ function EditorContainer({ onChange, editingChar, onChangeEditingChar }) {
   );
 }
 
-function Write({ message }) {
-  return message.split('').map((char, keyIdx) => {
-    if (char === '\n') {
-      return (
-        <Fragment key={keyIdx}>
-          <div style={{ height: 30, width: 0 }} />
-          <div className="type-break" />
-        </Fragment>
-      );
-    }
+function Write({ message }: { message: string }) {
+  return (
+    <Fragment>
+      {message.split('').map((char, keyIdx) => {
+        if (char === '\n') {
+          return (
+            <Fragment key={keyIdx}>
+              <div style={{ height: 30, width: 0 }} />
+              <div className="type-break" />
+            </Fragment>
+          );
+        }
 
-    return <Key key={keyIdx} char={char} />;
-  });
+        return <Key key={keyIdx} char={char} />;
+      })}
+    </Fragment>
+  );
 }
 
-const useClickOutside = (ref, callback) => {
-  const handleClick = (e) => {
-    if (ref.current && !ref.current.contains(e.target)) {
+const useClickOutside = (
+  ref: RefObject<HTMLInputElement>,
+  callback: () => void
+) => {
+  const handleClick = (e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as HTMLElement)) {
       callback();
     }
   };
@@ -412,9 +462,15 @@ const useClickOutside = (ref, callback) => {
   });
 };
 
-function Menu({ children, options = {} }) {
+function Menu({
+  children,
+  options = {},
+}: {
+  children: ReactNode;
+  options: { [key: string]: string | (() => void) };
+}) {
   const [open, openSet] = useState(false);
-  const ref = useRef();
+  const ref = useRef<HTMLInputElement>(null);
 
   const classList = [`jbx-menu`, open && '-open'].filter((e) => e).join(' ');
 
@@ -432,21 +488,14 @@ function Menu({ children, options = {} }) {
     >
       {children}
       {open && (
-        <div
-          className="jbx-menu-options"
-          onChange={async (evt) => {
-            await options[evt.target.value]();
-          }}
-          value="TITLE"
-        >
+        <div className="jbx-menu-options">
           {Object.keys(options).map((name) => {
-            if (typeof options[name] === 'function') {
+            if (options[name] instanceof Function) {
               return (
                 <div
                   className="jbx-menu-option"
-                  value={name}
                   key={name}
-                  onClick={options[name]}
+                  onClick={options[name] as () => void}
                 >
                   {name}
                 </div>
@@ -455,9 +504,8 @@ function Menu({ children, options = {} }) {
               return (
                 <a
                   className="jbx-menu-option"
-                  value={name}
                   key={name}
-                  href={options[name]}
+                  href={options[name] as string}
                 >
                   {name}
                 </a>
@@ -483,22 +531,32 @@ function App() {
   }
 
   useEffect(() => {
-    const typeEl = document.querySelector('.type');
+    const typeEl = document.querySelector('.type') as HTMLElement;
     const { height } = typeEl.getBoundingClientRect();
     textAreaHeightSet(height + 200);
   }, [text]);
 
   useEffect(() => {
     function resize() {
-      const width = document
-        .querySelector('body')
-        .getBoundingClientRect().width;
-      const availableChars = Math.min(Math.floor(width / 14), 60);
+      const bodyWidth = (
+        document.querySelector('body') as HTMLElement
+      ).getBoundingClientRect().width;
+
+      const sidebarWidth = (
+        document.querySelector('.sidebar') as HTMLElement
+      ).getBoundingClientRect().width;
+
+      // const availableChars = Math.min(Math.floor(width / 14), 160);
+
+      const availableChars = Math.min(
+        Math.floor((bodyWidth - (sidebarWidth < 200 ? sidebarWidth : 0)) / 14),
+        160
+      );
 
       charWidthSet(availableChars);
 
       window.requestAnimationFrame(() => {
-        const typeEl = document.querySelector('.type');
+        const typeEl = document.querySelector('.type') as HTMLElement;
         const { height } = typeEl.getBoundingClientRect();
         textAreaHeightSet(height + 200);
       });
@@ -541,12 +599,12 @@ function App() {
             'Export Config': () => {
               downloadBlob(
                 `brutalita-${new Date().getTime()}.json`,
-                JSON.stringify(cleanFontForExport(STATE.font), 0, 2)
+                JSON.stringify(cleanFontForExport(STATE.font), null, 2)
               );
             },
             'Restore Config': async () => {
               try {
-                const blob = await uploadBlob();
+                const blob = (await uploadBlob()) as [string];
                 const json = JSON.parse(blob[0]);
 
                 if (validateFont(json)) {
@@ -555,7 +613,7 @@ function App() {
                   fontChangeTrackSet(new Date().getTime() + 1);
                 }
               } catch (e) {
-                alert(`Unable to load font.json file`, e);
+                alert(`Unable to load font file.`);
               }
             },
           }}

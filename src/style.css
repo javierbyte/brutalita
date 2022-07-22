@@ -1,3 +1,7 @@
+body > iframe {
+  display: none !important;
+}
+
 html {
   box-sizing: border-box;
 }
@@ -70,6 +74,7 @@ textarea {
   padding: 14px;
   display: block;
   top: var(--topnav-height);
+  min-height: 100vh;
   position: absolute;
 }
 
@@ -114,6 +119,7 @@ textarea::selection {
 .type {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
 }
 .type-break {
   width: 100%;
@@ -211,8 +217,6 @@ svg {
   color: #fff;
 }
 
-.editor {
-}
 .editor-controls {
   position: absolute;
   right: 0;
