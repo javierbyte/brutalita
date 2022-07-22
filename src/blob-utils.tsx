@@ -1,13 +1,14 @@
-let pendingCallback = null;
+let pendingCallback: false | ((file: string[]) => void) = false;
+
 const inputFileElement = document.createElement('input');
 inputFileElement.setAttribute('type', 'file');
-inputFileElement.setAttribute('multiple', false);
+inputFileElement.setAttribute('multiple', 'false');
 inputFileElement.setAttribute('accept', '.json');
 
 inputFileElement.addEventListener(
   'change',
-  async (event) => {
-    const { files } = event.target;
+  async (event: Event) => {
+    const { files } = event.target as HTMLInputElement;
     if (!files) {
       return;
     }
@@ -30,24 +31,13 @@ export function uploadBlob() {
   });
 }
 
-export function downloadBlob(name = 'file.txt', data) {
+export function downloadBlob(name = 'file.txt', data: string) {
   const blob = new Blob([data]);
-
-  // Convert your blob into a Blob URL (a special url that points to an object in the browser's memory)
   const blobUrl = URL.createObjectURL(blob);
-
-  // Create a link element
   const link = document.createElement('a');
-
-  // Set link's href to point to the Blob URL
   link.href = blobUrl;
   link.download = name;
-
-  // Append link to the body
   document.body.appendChild(link);
-
-  // Dispatch click event on the link
-  // This is necessary as link.click() does not work on the latest firefox
   link.dispatchEvent(
     new MouseEvent('click', {
       bubbles: true,
@@ -55,7 +45,5 @@ export function downloadBlob(name = 'file.txt', data) {
       view: window,
     })
   );
-
-  // Remove link from body
   document.body.removeChild(link);
 }
