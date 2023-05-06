@@ -1,16 +1,49 @@
 import Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
-import { FontDefinition } from './app';
+import { FontConfig, FontDefinition } from './app';
 
 // import unicodeCsvSrc from './lib/named-character-references.csv';
 
-const PRODUCTION = window.location.search.includes('production');
+const CIRCLE_SEGMENTS = 16;
 
-const WEIGHT = 0.25;
-const SCALE_X = 180;
-const SCALE_Y = -170;
-const DRIFT_X = 100;
-const DRIFT_Y = 720;
+const WEIGHTS = {
+  '300': 0.15,
+  '400': 0.25,
+  '700': 0.3,
+} as const;
+
+const CHAR_X = 2;
+const CHAR_Y = 4;
+const SCALE_X = 640;
+const SCALE_Y = SCALE_X * 1.888;
+
+const KERNING = Math.round((SCALE_X * 0.4) / 2) * 2;
+const UNITS_PER_EM = 2048;
+
+const ASCENDER = Math.round((SCALE_Y * 5) / 4);
+const DESCENDER = -Math.round(SCALE_Y / 4);
+
+function configToMetrics(config: FontConfig) {
+  const weight = WEIGHTS[config.weight];
+  const monospaceAdvance =
+    UNITS_PER_EM - SCALE_X - KERNING + (weight / CHAR_X / 2) * UNITS_PER_EM;
+  return { weight, monospaceAdvance };
+}
+
+function coordToScale(
+  x: number,
+  y: number,
+  config: FontConfig
+): [number, number] {
+  const { weight } = configToMetrics(config);
+
+  const newCoord: [number, number] = [
+    Math.round(((x + weight) / CHAR_X) * SCALE_X) + KERNING / 2,
+    Math.round(((CHAR_Y - y - weight + 0.5) / CHAR_Y) * SCALE_Y),
+  ];
+
+  return newCoord;
+}
 
 // const TO_COMBINE = {
 //   á: ['a', '´'],
@@ -19,8 +52,6 @@ const DRIFT_Y = 720;
 //   ó: ['o', '´'],
 //   ú: ['u', '´'],
 // };
-
-const CIRCLE_SEGMENTS = 16;
 
 // async function getUnicodeCharNames() {
 //   return fetch(unicodeCsvSrc)
@@ -85,7 +116,8 @@ function definePolygon() {
   };
 }
 
-function makeGlyph(char: string, path: polygon[] = []) {
+function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
+  const { weight, monospaceAdvance } = configToMetrics(config);
   const glyphPolygon = definePolygon();
 
   // clean path and layers from empty arrays
@@ -104,26 +136,23 @@ function makeGlyph(char: string, path: polygon[] = []) {
 
         const polar = cartesian2polar({ x: x2 - x1, y: y2 - y1 });
         const newCoord = polar2cartesian({
-          distance: WEIGHT,
+          distance: weight,
           angle: polar.angle - Math.PI / 2,
         });
 
         glyphPolygon.start(
-          (x1 - newCoord.x) * SCALE_X + DRIFT_X,
-          (y1 - newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x1 - newCoord.x, y1 - newCoord.y, config)
         );
         glyphPolygon.line(
-          (x1 + newCoord.x) * SCALE_X + DRIFT_X,
-          (y1 + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x1 + newCoord.x, y1 + newCoord.y, config)
         );
         glyphPolygon.line(
-          (x2 + newCoord.x) * SCALE_X + DRIFT_X,
-          (y2 + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x2 + newCoord.x, y2 + newCoord.y, config)
         );
         glyphPolygon.line(
-          (x2 - newCoord.x) * SCALE_X + DRIFT_X,
-          (y2 - newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x2 - newCoord.x, y2 - newCoord.y, config)
         );
+
         glyphPolygon.close();
 
         i++;
@@ -194,20 +223,18 @@ function makeGlyph(char: string, path: polygon[] = []) {
     let j = 0;
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
-        distance: WEIGHT,
+        distance: weight,
         angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
       if (j === 0) {
         glyphPolygon.start(
-          (x + newCoord.x) * SCALE_X + DRIFT_X,
-          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x + newCoord.x, y + newCoord.y, config)
         );
       } else {
         glyphPolygon.line(
-          (x + newCoord.x) * SCALE_X + DRIFT_X,
-          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x + newCoord.x, y + newCoord.y, config)
         );
       }
       j++;
@@ -221,20 +248,18 @@ function makeGlyph(char: string, path: polygon[] = []) {
     let j = 0;
     while (j < CIRCLE_SEGMENTS) {
       const newCoord = polar2cartesian({
-        distance: WEIGHT * 1.5,
+        distance: weight * 1.5,
         angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
       });
 
       // first point of the circle, move
       if (j === 0) {
         glyphPolygon.start(
-          (x + newCoord.x) * SCALE_X + DRIFT_X,
-          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x + newCoord.x, y + newCoord.y, config)
         );
       } else {
         glyphPolygon.line(
-          (x + newCoord.x) * SCALE_X + DRIFT_X,
-          (y + newCoord.y) * SCALE_Y + DRIFT_Y
+          ...coordToScale(x + newCoord.x, y + newCoord.y, config)
         );
       }
       j++;
@@ -242,13 +267,16 @@ function makeGlyph(char: string, path: polygon[] = []) {
     glyphPolygon.close();
   }
 
-  // console.info({
-  //   char,
-  //   polygon: glyphPolygon.get(),
-  //   union: glyphPolygon.getUnion(),
-  // });
-
   const unionPolygon = glyphPolygon.getUnion();
+
+  let remainingSpaceTranslation = 0;
+  if (!config.monospace && unionPolygon[0]) {
+    remainingSpaceTranslation =
+      KERNING / 2 - Math.min(...unionPolygon[0][0].map((e) => e[0]));
+  }
+
+  console.warn({ unionPolygon });
+
   const tmpPath = new Opentype.Path();
   for (const polygon of unionPolygon) {
     for (const layer of polygon) {
@@ -256,9 +284,9 @@ function makeGlyph(char: string, path: polygon[] = []) {
         const coord = layer[coordIndex];
 
         if (coordIndex === '0') {
-          tmpPath.moveTo(coord[0], coord[1]);
+          tmpPath.moveTo(coord[0] + remainingSpaceTranslation, coord[1]);
         } else {
-          tmpPath.lineTo(coord[0], coord[1]);
+          tmpPath.lineTo(coord[0] + remainingSpaceTranslation, coord[1]);
         }
       }
     }
@@ -266,17 +294,46 @@ function makeGlyph(char: string, path: polygon[] = []) {
 
   // console.log('>> MAKING glyph,', { char, name, unicode });
 
+  const min = Math.min(
+    ...tmpPath.commands.map((e: any) => {
+      return e.x;
+    })
+  );
+  const max = Math.max(
+    ...tmpPath.commands.map((e: any) => {
+      return e.x;
+    })
+  );
+
+  console.warn('>> KERNING', KERNING);
+  console.warn(min);
+
+  const baseDynamicSpacing = max - min;
+  const finalSpacing = config.monospace
+    ? monospaceAdvance
+    : char === ' '
+    ? Math.round(monospaceAdvance * 0.8)
+    : baseDynamicSpacing + KERNING;
+
   const tmpGlyph = new Opentype.Glyph({
     name: char,
     unicode: char.charCodeAt(0),
-    advanceWidth: 600,
+    advanceWidth: finalSpacing,
+    xMax: SCALE_X,
+    yMax: SCALE_Y,
+    xMin: 0,
+    yMin: 0,
     path: tmpPath,
   });
 
   return tmpGlyph;
 }
 
-export async function downloadFont(fontSrc: FontDefinition) {
+export async function downloadFont(
+  definittion: FontDefinition,
+  config: FontConfig
+) {
+  const { monospaceAdvance } = configToMetrics(config);
   // Object.keys(TO_COMBINE).forEach((char) => {
   //   console.log(char);
   //   fontSrc[char] = [
@@ -284,31 +341,36 @@ export async function downloadFont(fontSrc: FontDefinition) {
   //     ...fontSrc[TO_COMBINE[char][1]],
   //   ];
   // });
-  console.log('>> MAKING font', fontSrc);
+  console.log('>> MAKING font', definittion);
 
   // const unicodeCharNames = await getUnicodeCharNames();
 
   const notdefGlyph = new Opentype.Glyph({
     name: '.notdef',
-    unicode: 0,
-    advanceWidth: 600,
+    advanceWidth: monospaceAdvance,
+    xMax: SCALE_X,
+    yMax: SCALE_Y,
+    xMin: 0,
+    yMin: 0,
     path: new Opentype.Path(),
   });
 
-  const newGlyphs = Object.keys(fontSrc).map((char) => {
-    return makeGlyph(char, fontSrc[char]);
+  const newGlyphs = Object.keys(definittion).map((char) => {
+    return makeGlyph(char, definittion[char], config);
   });
 
   const glyphs = [notdefGlyph, ...newGlyphs];
 
   console.log('> Font glyphs', glyphs);
 
+  const name = `${config.name} ${config.monospace ? 'Mono' : ''}`;
+
   const font = new Opentype.Font({
-    familyName: PRODUCTION ? 'Brutalita' : 'Brutalita Custom',
-    styleName: 'Regular',
-    unitsPerEm: 1000,
-    ascender: 1000,
-    descender: -200,
+    familyName: name,
+    styleName: String(config.weight),
+    unitsPerEm: UNITS_PER_EM,
+    ascender: ASCENDER,
+    descender: DESCENDER,
     glyphs: glyphs,
   });
   font.download();

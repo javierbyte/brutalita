@@ -1,19 +1,44 @@
 /* eslint react/prop-types: 0 */
 
-import { memo, Fragment, useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useReducer } from 'react';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 
 import { downloadBlob, uploadBlob } from './blob-utils';
 import { downloadFont } from './font-maker';
 
-import FONT_SRC from './font.json';
+import FONT_DEFINITION_SRC from './font.json';
 
-import type { ReactNode, RefObject } from 'react';
+import { Key } from './components/key';
+
+import type { ReactNode } from 'react';
 
 type CharLayer = [number, number][];
 type CharLayers = CharLayer[];
+
+const weightToStrokeWidth = {
+  300: 1.5,
+  400: 2,
+  700: 2.5,
+} as const;
+
+type FontWeightType = keyof typeof weightToStrokeWidth;
+
+export type FontConfig = {
+  name: string;
+  weight: FontWeightType;
+  height: number;
+  monospace: true | false;
+};
 export type FontDefinition = {
   [char: string]: CharLayers;
 };
+
+const DEFAULT_FONT_CONFIG = {
+  name: 'Brutalita Custom',
+  weight: 400,
+  height: 1.888,
+  monospace: true,
+} as const;
 
 function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
   const typedFont: FontDefinition = {};
@@ -30,8 +55,32 @@ function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
 const STATE: {
   font: FontDefinition;
 } = {
-  font: fontSrcToTypedFont(FONT_SRC),
+  font: fontSrcToTypedFont(FONT_DEFINITION_SRC),
 };
+
+function fontConfigReducer(
+  state: FontConfig,
+  action: {
+    type: string;
+    payload: any;
+  }
+) {
+  switch (action.type) {
+    case 'rename':
+      return { ...state, name: action.payload };
+    case 'change-weight':
+      return { ...state, weight: action.payload };
+    case 'change-width':
+      return {
+        ...state,
+        monospace: action.payload,
+      };
+    case 'reset':
+      return action.payload;
+    default:
+      throw new Error();
+  }
+}
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
 const REMAINING_CHARS = Object.keys(STATE.font)
@@ -45,13 +94,13 @@ const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-const DEFAULT_TEXT = `BRUTALITA v0.6
+const DEFAULT_TEXT = `BRUTALITA v0.7
 
 ${ALL_CHARS.join(``)}
 
 
-Brutalita is an experimental font and editor,
-edit in your browser and download the font.
+Brutalita is an experimental font and editor.
+Create and download your font.
 
 Use the controls on this page!
 - Download the original font or your custom edition.
@@ -59,15 +108,12 @@ Use the controls on this page!
 - This textarea is also editable :)
 
 The name means "little brutal" in Spanish.
-Made with SVG and OpenType.js
+Uses OpenType.js to generate .otf files
 
 
 Made by @javierbyte`;
 
-const DEFAULT_FONT_SIZE = 16;
-const DEFAULT_STROKE_WIDTH = 2;
-
-const SEGMENTS = [2, 4];
+const SEGMENTS = [2, 4] as const;
 const DOTSX = SEGMENTS[0];
 const DOTSY = SEGMENTS[1];
 
@@ -77,7 +123,7 @@ function includes(arr: CharLayer, el: number[]) {
   });
 }
 
-function validateFont(fontDefinition: FontDefinition) {
+function validateCharFontDefinition(fontDefinition: FontDefinition) {
   try {
     if (!Object.keys(fontDefinition).length) {
       alert(`No characters found on this file`);
@@ -86,8 +132,7 @@ function validateFont(fontDefinition: FontDefinition) {
 
     for (const char of Object.keys(fontDefinition)) {
       if (char.length > 1) {
-        alert(`Found invalid char "${char}"`);
-        return false;
+        throw new Error(`Found invalid char "${char}"`);
       }
       for (const layer of fontDefinition[char]) {
         for (const coord of layer) {
@@ -105,9 +150,24 @@ function validateFont(fontDefinition: FontDefinition) {
 
     return true;
   } catch (e) {
-    alert(`Invalid font file.`);
-    return false;
+    throw new Error(`Invalid font file.`);
   }
+}
+
+function parseFont(json: any): { config: FontConfig; chars: FontDefinition } {
+  const newConfig: FontConfig = { ...DEFAULT_FONT_CONFIG };
+
+  newConfig.name = String(json.config.name);
+  newConfig.monospace = Boolean(json.config.monospace);
+
+  const newWeight = Number(json.config.weight);
+  if (newWeight === 300 || newWeight === 400 || newWeight === 700) {
+    newConfig.weight = newWeight;
+  }
+
+  validateCharFontDefinition(json.chars);
+
+  return { config: newConfig, chars: json.chars };
 }
 
 // removes empty layers of font definition
@@ -121,96 +181,6 @@ function cleanFontForExport(fontDefinition: FontDefinition) {
     return acc;
   }, {});
 }
-
-const Key = memo(function Key({
-  char,
-  path,
-  custom = false,
-  color = 'white',
-  fontSize = DEFAULT_FONT_SIZE,
-  strokeWidth = DEFAULT_STROKE_WIDTH,
-}: {
-  char?: string;
-  path?: CharLayers;
-  custom?: true | false;
-  color?: string;
-  fontSize?: number;
-  strokeWidth?: number;
-}) {
-  const WIDTH = 0.5 * fontSize;
-  const HEIGHT = 1 * fontSize;
-  const STROKEWIDTH = strokeWidth;
-  const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
-
-  const finalPath = path || STATE.font[char as string];
-
-  const styles = custom
-    ? {
-        width: WIDTH + STROKEWIDTH,
-        height: HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT,
-        marginBottom: -LOW_STEM_HEIGHT,
-        marginRight: 4,
-        marginTop: 12,
-        color,
-      }
-    : {};
-
-  if (!finalPath) {
-    return <div className="unknown-char key">{char}</div>;
-  }
-
-  let dots: [number, number][] = [];
-
-  const pathMapped = finalPath.map((layer) =>
-    layer.map(([x, y]) => {
-      const coordX = Math.round((x * WIDTH) / SEGMENTS[0]);
-      const coordY = Math.round((y * HEIGHT) / SEGMENTS[1]);
-
-      const coordStr = `${coordX},${coordY}`;
-
-      if (layer.length === 1) {
-        dots.push([coordX, coordY]);
-      }
-
-      return coordStr;
-    })
-  );
-
-  return (
-    <svg
-      className="key"
-      viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${
-        WIDTH + STROKEWIDTH
-      } ${HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT}`}
-      width={styles ? styles.width : undefined}
-      height={styles ? styles.height : undefined}
-      style={styles}
-    >
-      {pathMapped.map((line, lineIdx) => (
-        <polyline
-          key={lineIdx}
-          points={line.join(' ')}
-          strokeWidth={STROKEWIDTH}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-          stroke={color}
-        />
-      ))}
-
-      {dots.map((dotXY) => (
-        <circle
-          key={`${dotXY[0]}, ${dotXY[1]}`}
-          cx={dotXY[0]}
-          cy={dotXY[1]}
-          r={STROKEWIDTH * 0.75}
-          fill={color}
-        />
-      ))}
-    </svg>
-  );
-});
 
 function Editor({
   value,
@@ -342,6 +312,34 @@ function Editor({
   );
 }
 
+function Tabs({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[];
+  value: string;
+  onChange: (newValue: string) => void;
+}) {
+  return (
+    <div className="jbx-tabs">
+      {options.map((option) => {
+        return (
+          <button
+            key={option}
+            className={option === value ? 'active' : ''}
+            onClick={() => {
+              onChange(option);
+            }}
+          >
+            {option}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function EditorContainer({
   onChange,
   editingChar,
@@ -426,7 +424,13 @@ function EditorContainer({
   );
 }
 
-function Write({ message }: { message: string }) {
+function Write({
+  message,
+  fontWeight,
+}: {
+  message: string;
+  fontWeight: FontWeightType;
+}) {
   return (
     <Fragment>
       {message.split('').map((char, keyIdx) => {
@@ -439,86 +443,35 @@ function Write({ message }: { message: string }) {
           );
         }
 
-        return <Key key={keyIdx} char={char} />;
+        return (
+          <Key
+            key={keyIdx}
+            char={char}
+            path={STATE.font[char]}
+            strokeWidth={weightToStrokeWidth[fontWeight]}
+          />
+        );
       })}
     </Fragment>
   );
 }
 
-const useClickOutside = (
-  ref: RefObject<HTMLInputElement>,
-  callback: () => void
-) => {
-  const handleClick = (e: MouseEvent) => {
-    if (ref.current && !ref.current.contains(e.target as HTMLElement)) {
-      callback();
-    }
-  };
-  useEffect(() => {
-    document.addEventListener('click', handleClick);
-    return () => {
-      document.removeEventListener('click', handleClick);
-    };
-  });
-};
-
-function Menu({
-  children,
-  options = {},
-}: {
-  children: ReactNode;
-  options: { [key: string]: string | (() => void) };
-}) {
-  const [open, openSet] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-
-  const classList = [`jbx-menu`, open && '-open'].filter((e) => e).join(' ');
-
-  useClickOutside(ref, () => {
-    openSet(false);
-  });
-
+function Menu({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div
-      ref={ref}
-      onClick={() => {
-        openSet(!open);
-      }}
-      className={classList}
-    >
-      {children}
-      {open && (
-        <div className="jbx-menu-options">
-          {Object.keys(options).map((name) => {
-            if (options[name] instanceof Function) {
-              return (
-                <div
-                  className="jbx-menu-option"
-                  key={name}
-                  onClick={options[name] as () => void}
-                >
-                  {name}
-                </div>
-              );
-            } else {
-              return (
-                <a
-                  className="jbx-menu-option"
-                  key={name}
-                  href={options[name] as string}
-                >
-                  {name}
-                </a>
-              );
-            }
-          })}
-        </div>
-      )}
-    </div>
+    <PopoverPrimitive.Root>
+      <PopoverPrimitive.Trigger>{title}</PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Content className="jbx-popover">
+        {children}
+      </PopoverPrimitive.Content>
+    </PopoverPrimitive.Root>
   );
 }
 
 function App() {
+  const [fontConfig, fontConfigDispatch] = useReducer(
+    fontConfigReducer,
+    DEFAULT_FONT_CONFIG
+  );
   const [editingChar, editingCharSet] = useState('Q');
   const [textAreaHeight, textAreaHeightSet] = useState(window.innerHeight);
   const [charWidth, charWidthSet] = useState(64);
@@ -546,8 +499,6 @@ function App() {
         document.querySelector('.sidebar') as HTMLElement
       ).getBoundingClientRect().width;
 
-      // const availableChars = Math.min(Math.floor(width / 14), 160);
-
       const availableChars = Math.min(
         Math.floor((bodyWidth - (sidebarWidth < 200 ? sidebarWidth : 0)) / 14),
         160
@@ -569,21 +520,23 @@ function App() {
 
   return (
     <Fragment>
-      <textarea
-        style={{ height: textAreaHeight, width: 14 * charWidth }}
-        spellCheck="false"
-        value={text}
-        onChange={(e) => {
-          textSet(e.target.value);
-        }}
-      />
+      <div className="scroller">
+        <textarea
+          style={{ height: textAreaHeight, width: 14 * charWidth }}
+          spellCheck="false"
+          value={text}
+          onChange={(e) => {
+            textSet(e.target.value);
+          }}
+        />
 
-      <div
-        key={fontChangeTrack}
-        className="type"
-        style={{ width: 14 * charWidth }}
-      >
-        <Write message={text} />
+        <div
+          key={fontChangeTrack}
+          className="type"
+          style={{ width: 14 * charWidth }}
+        >
+          <Write message={text} fontWeight={fontConfig.weight} />
+        </div>
       </div>
 
       <EditorContainer
@@ -594,53 +547,113 @@ function App() {
       />
 
       <nav className={`topnav`}>
-        <Menu
-          options={{
-            'Export Config': () => {
+        <Menu title="Export">
+          <button
+            onClick={() => {
+              downloadFont(STATE.font, fontConfig);
+            }}
+          >
+            Font (.otf)
+          </button>
+          <button
+            onClick={() => {
               downloadBlob(
                 `brutalita-${new Date().getTime()}.json`,
-                JSON.stringify(cleanFontForExport(STATE.font), null, 2)
+                JSON.stringify(
+                  {
+                    config: fontConfig,
+                    chars: cleanFontForExport(STATE.font),
+                  },
+                  null,
+                  2
+                )
               );
-            },
-            'Restore Config': async () => {
+            }}
+          >
+            Font Definition (.json)
+          </button>
+        </Menu>
+
+        <Menu title="Import">
+          <button
+            onClick={async () => {
               try {
                 const blob = (await uploadBlob()) as [string];
-                const json = JSON.parse(blob[0]);
+                let json = JSON.parse(blob[0]);
 
-                if (validateFont(json)) {
-                  STATE.font = json;
-                  fontLoadTrackSet(new Date().getTime());
-                  fontChangeTrackSet(new Date().getTime() + 1);
+                // Old Format Support
+                if (!json.config) {
+                  json = {
+                    chars: json,
+                    config: { ...DEFAULT_FONT_CONFIG },
+                  };
                 }
+
+                const { config, chars } = parseFont(json);
+
+                STATE.font = chars;
+                fontConfigDispatch({ type: 'reset', payload: config });
+                fontLoadTrackSet(new Date().getTime());
+                fontChangeTrackSet(new Date().getTime() + 1);
               } catch (e) {
                 alert(`Unable to load font file.`);
               }
-            },
-          }}
-        >
-          {`File`}
+            }}
+          >
+            Font Definition (.json)
+          </button>
         </Menu>
-        <Menu
-          options={{
-            'Download edited font': () => {
-              downloadFont(STATE.font);
-            },
-            'Download original font': () => {
-              window.open('Brutalita-Regular.otf');
-            },
-          }}
-        >
-          {`Download`}
+
+        <Menu title="Settings">
+          <div className="jbx-popover--title">Font Name</div>
+          <input
+            className="jbx-input"
+            value={fontConfig.name}
+            onChange={(evt) =>
+              fontConfigDispatch({ type: 'rename', payload: evt.target.value })
+            }
+            spellCheck={false}
+          />
+          <div className="jbx-popover--title">Font Weight</div>
+          <Tabs
+            options={['300', '400', '700']}
+            value={String(fontConfig.weight)}
+            onChange={(newValue) =>
+              fontConfigDispatch({ type: 'change-weight', payload: newValue })
+            }
+          />
+          <div className="jbx-popover--title">Width</div>
+          <Tabs
+            options={['Monospace', 'Proportional']}
+            onChange={(newValue) =>
+              fontConfigDispatch({
+                type: 'change-width',
+                payload: newValue === 'Monospace',
+              })
+            }
+            value={fontConfig.monospace ? 'Monospace' : 'Proportional'}
+          />
         </Menu>
-        <Menu
-          options={{
-            'Github Repo': 'https://github.com/javierbyte/brutalita',
-          }}
-        >
-          {`About`}
+
+        <Menu title="About">
+          <div className="jbx-popover--content">
+            Made by <a href="https://javier.xyz">Javier Bórquez</a>.
+          </div>
+          <hr />
+          <div className="jbx-popover--content">
+            <a href="Brutalita-300.otf">Download Brutalita 300</a>
+          </div>
+          <div className="jbx-popover--content">
+            <a href="Brutalita-400.otf">Download Brutalita 400</a>
+          </div>
+          <div className="jbx-popover--content">
+            <a href="Brutalita-700.otf">Download Brutalita 700</a>
+          </div>
+          <hr />
+          <div className="jbx-popover--content">
+            <a href="https://github.com/javierbyte/brutalita">Github Repo</a>
+          </div>
         </Menu>
-        <div style={{ flex: 1 }} />
-        <a href="https://twitter.com/javierbyte">Made by Javier</a>
       </nav>
     </Fragment>
   );

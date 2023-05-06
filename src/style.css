@@ -12,9 +12,15 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+body,
+html {
+  height: 100vsh;
+}
+
 body {
   width: 100vw;
   overflow-x: hidden;
+  overflow-y: hidden;
   background: #282828;
   margin: 0;
   padding: 0;
@@ -36,9 +42,21 @@ option {
 
 button,
 body {
-  font-family: Monaco, monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    'Roboto', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    sans-serif;
   color: #ccc;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  margin: 0;
+  display: block;
+  background-color: transparent;
+}
+button:hover {
+  background-color: #222;
 }
 
 * {
@@ -46,7 +64,6 @@ body {
 }
 
 a {
-  display: block;
   text-decoration: none;
   color: #74b9ff;
 }
@@ -67,6 +84,13 @@ a:hover {
   color: #0984e3;
 }
 
+hr {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: 2px solid rgba(0, 0, 0, 0.2);
+}
+
 .type,
 textarea {
   width: calc(100vw - 32px);
@@ -74,8 +98,10 @@ textarea {
   padding: 14px;
   display: block;
   top: var(--topnav-height);
-  min-height: 100vh;
   position: absolute;
+  overflow: hidden;
+  top: 0;
+  left: 0;
 }
 
 @media screen and (min-width: 640px) {
@@ -102,7 +128,6 @@ textarea {
   line-height: 30px;
   z-index: 100;
   resize: none;
-  overflow: auto;
   caret-color: white;
   outline: none;
 }
@@ -182,6 +207,54 @@ svg {
   }
 }
 
+.scroller {
+  top: var(--topnav-height);
+  height: calc(100vh - var(--topnav-height));
+  height: calc(100svh - var(--topnav-height));
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+@media screen and (max-width: 1000px) {
+  .scroller {
+    top: var(--topnav-height);
+    height: calc(100vh - var(--topnav-height) - 180px);
+    height: calc(100svh - var(--topnav-height) - 180px);
+  }
+}
+
+.jbx-tabs {
+  width: 250px;
+  display: flex;
+  background-color: #333;
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: inset #2224 0 2px 2px;
+}
+.jbx-tabs button {
+  flex: 1;
+  height: 40px;
+  border-radius: 6px;
+}
+.jbx-tabs button.active {
+  background-color: #444;
+  box-shadow: inset #fff1 0 1px 0, rgba(0, 0, 0, 0.1) 0 1px 0;
+  color: white;
+  font-weight: 700;
+}
+
+.jbx-input {
+  appearance: none;
+  border: none;
+  font-size: 16px;
+  border-radius: 6px;
+  padding: 6px;
+  height: 40px;
+  width: 100%;
+  background-color: #333;
+  box-shadow: inset #2224 0 2px 2px;
+  color: white;
+}
+
 .editor-input {
   font-size: 44px;
   width: 64px;
@@ -253,7 +326,6 @@ svg {
   font-size: 15px;
   width: 100vw;
   height: var(--topnav-height);
-  gap: 4px;
   border-bottom: 1px solid var(--separator-color);
 
   background-color: #28282880;
@@ -266,6 +338,29 @@ svg {
 }
 .topnav.-responsive .-hide-on-mobile {
   display: initial !important;
+}
+
+.topnav button {
+  border: none;
+  font-size: 15px;
+  margin: 0;
+  padding: 0 16px;
+}
+.topnav > button {
+  height: var(--topnav-height);
+}
+.topnav button[data-state='open'] {
+  background-color: #111;
+}
+.topnav button[data-state='open']::after {
+  content: '';
+  display: block;
+  border: 10px solid transparent;
+  border-bottom: 10px solid #444;
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  margin-left: -10px;
 }
 
 .jbx-menu {
@@ -300,17 +395,56 @@ svg {
   background: #000;
 }
 
-button {
-  -webkit-appearance: none;
+.jbx-popover {
+  margin: 3px;
+  background-color: #444;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: rgba(0, 0, 0, 0.13) 0 1px 0, rgba(16, 16, 16, 0.5) 0 4px 8px;
+  overflow: hidden;
+  border-bottom: 1px solid #fff1;
+}
+.jbx-popover > button {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  width: 100%;
+  text-align: left;
+  line-height: 1;
+}
+.jbx-popover .jbx-popover--content {
+  padding: 8px 0;
+}
+
+.jbx-popover .jbx-popover--title {
+  padding: 12px 0 4px;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: #0001 0 -1px 0;
+}
+
+.jbx-popover .jbx-popover--title:first-child {
+  padding-top: 0;
+}
+
+.jbx-popover .jbx-input {
+  padding: 8px 16px;
+}
+.jbx-popover .jbx-input:focus {
+  outline: none;
+  box-shadow: #e84393 0 0 0 0.5px, #e8439340 0 0 0 3px, yellow 0 0 14px -10px;
+}
+
+.sidebar button {
   background-color: #444;
   border: none;
   padding: 0 8px;
   height: 24px;
   line-height: 1;
   margin: 0;
-  cursor: pointer;
 }
-button:hover {
+.sidebar button:hover {
   background-color: #555;
   color: #fff;
 }
