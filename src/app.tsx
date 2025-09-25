@@ -107,7 +107,7 @@ Use the controls on this page!
 - Save and restore your progress.
 - This textarea is also editable :)
 
-The name means "little brutal" in Spanish.
+"Brutalita" is a playful combination of "brutalism" and "little brutal" in Spanish.
 Uses OpenType.js to generate .otf files
 
 
@@ -573,7 +573,6 @@ function App() {
             Font Definition (.json)
           </button>
         </Menu>
-
         <Menu title="Import">
           <button
             onClick={async () => {
@@ -603,7 +602,6 @@ function App() {
             Font Definition (.json)
           </button>
         </Menu>
-
         <Menu title="Settings">
           <div className="jbx-popover--title">Font Name</div>
           <input
@@ -634,12 +632,8 @@ function App() {
             value={fontConfig.monospace ? 'Monospace' : 'Proportional'}
           />
         </Menu>
-
         <Menu title="About">
-          <div className="jbx-popover--content">
-            Made by <a href="https://javier.xyz">Javier Bórquez</a>.
-          </div>
-          <hr />
+          Download the unmodified font:
           <div className="jbx-popover--content">
             <a href="Brutalita-300.otf">Download Brutalita 300</a>
           </div>
@@ -651,9 +645,18 @@ function App() {
           </div>
           <hr />
           <div className="jbx-popover--content">
+            Made by <a href="https://javier.xyz">Javier Bórquez</a>.
+          </div>
+          <hr />
+          <div className="jbx-popover--content">
             <a href="https://github.com/javierbyte/brutalita">Github Repo</a>
           </div>
         </Menu>
+
+        <div className="quick-links">
+          <a href="https://github.com/javierbyte/brutalita">Github repo</a>
+          <a href="https://javier.xyz">@javierbyte</a>
+        </div>
       </nav>
     </Fragment>
   );

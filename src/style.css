@@ -464,3 +464,21 @@ svg {
     display: none;
   }
 }
+
+@media screen and (min-width: 640px) {
+  .quick-links {
+    display: flex !important;
+  }
+}
+
+.quick-links {
+  flex: 1;
+  display: none;
+  justify-content: flex-end;
+}
+
+.quick-links a {
+  color: #74b9ff;
+  padding: 8px;
+  text-decoration: none;
+}
