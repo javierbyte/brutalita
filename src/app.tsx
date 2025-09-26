@@ -655,7 +655,7 @@ function App() {
 
         <div className="quick-links">
           <a href="https://github.com/javierbyte/brutalita">Github repo</a>
-          <a href="https://javier.xyz">@javierbyte</a>
+          <a href="https://x.com/javierbyte">@javierbyte</a>
         </div>
       </nav>
     </Fragment>
