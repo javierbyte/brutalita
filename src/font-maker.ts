@@ -275,8 +275,6 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
       KERNING / 2 - Math.min(...unionPolygon[0][0].map((e) => e[0]));
   }
 
-  console.warn({ unionPolygon });
-
   const tmpPath = new Opentype.Path();
   for (const polygon of unionPolygon) {
     for (const layer of polygon) {
@@ -305,15 +303,12 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
     })
   );
 
-  console.warn('>> KERNING', KERNING);
-  console.warn(min);
-
   const baseDynamicSpacing = max - min;
   const finalSpacing = config.monospace
     ? monospaceAdvance
     : char === ' '
-    ? Math.round(monospaceAdvance * 0.8)
-    : baseDynamicSpacing + KERNING;
+      ? Math.round(monospaceAdvance * 0.8)
+      : baseDynamicSpacing + KERNING;
 
   const tmpGlyph = new Opentype.Glyph({
     name: char,
@@ -330,7 +325,7 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
 }
 
 export async function downloadFont(
-  definittion: FontDefinition,
+  definition: FontDefinition,
   config: FontConfig
 ) {
   const { monospaceAdvance } = configToMetrics(config);
@@ -341,8 +336,6 @@ export async function downloadFont(
   //     ...fontSrc[TO_COMBINE[char][1]],
   //   ];
   // });
-  console.log('>> MAKING font', definittion);
-
   // const unicodeCharNames = await getUnicodeCharNames();
 
   const notdefGlyph = new Opentype.Glyph({
@@ -355,13 +348,11 @@ export async function downloadFont(
     path: new Opentype.Path(),
   });
 
-  const newGlyphs = Object.keys(definittion).map((char) => {
-    return makeGlyph(char, definittion[char], config);
+  const newGlyphs = Object.keys(definition).map((char) => {
+    return makeGlyph(char, definition[char], config);
   });
 
   const glyphs = [notdefGlyph, ...newGlyphs];
-
-  console.log('> Font glyphs', glyphs);
 
   const name = `${config.name} ${config.monospace ? 'Mono' : ''}`;
 

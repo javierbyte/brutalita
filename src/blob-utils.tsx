@@ -46,4 +46,5 @@ export function downloadBlob(name = 'file.txt', data: string) {
     })
   );
   document.body.removeChild(link);
+  URL.revokeObjectURL(blobUrl);
 }

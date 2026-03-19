@@ -512,10 +512,9 @@ function App() {
         textAreaHeightSet(height + 200);
       });
     }
-    window.addEventListener('resize', () => {
-      resize();
-    });
+    window.addEventListener('resize', resize);
     resize();
+    return () => window.removeEventListener('resize', resize);
   }, []);
 
   return (
