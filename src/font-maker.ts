@@ -1,6 +1,7 @@
 import Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
 import { FontConfig, FontDefinition } from './app';
+import { downloadBlob } from './blob-utils';
 
 // import unicodeCsvSrc from './lib/named-character-references.csv';
 
@@ -364,5 +365,8 @@ export async function downloadFont(
     descender: DESCENDER,
     glyphs: glyphs,
   });
-  font.download();
+
+  // opentype.js v2 deprecated Font.download() (no platform-specific actions);
+  // serialize to an ArrayBuffer and trigger the download ourselves.
+  downloadBlob(`${name.trim()}-${config.weight}.otf`, font.toArrayBuffer());
 }

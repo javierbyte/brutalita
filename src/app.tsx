@@ -1,3 +1,5 @@
+'use client';
+
 /* eslint react/prop-types: 0 */
 
 import { Fragment, useState, useEffect, useReducer } from 'react';
@@ -634,13 +636,13 @@ function App() {
         <Menu title="About">
           Download the unmodified font:
           <div className="jbx-popover--content">
-            <a href="Brutalita-300.otf">Download Brutalita 300</a>
+            <a href="/Brutalita-300.otf">Download Brutalita 300</a>
           </div>
           <div className="jbx-popover--content">
-            <a href="Brutalita-400.otf">Download Brutalita 400</a>
+            <a href="/Brutalita-400.otf">Download Brutalita 400</a>
           </div>
           <div className="jbx-popover--content">
-            <a href="Brutalita-700.otf">Download Brutalita 700</a>
+            <a href="/Brutalita-700.otf">Download Brutalita 700</a>
           </div>
           <hr />
           <div className="jbx-popover--content">
