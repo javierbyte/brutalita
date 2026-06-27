@@ -22,7 +22,7 @@ inputFileElement.addEventListener(
   false
 );
 
-export function uploadBlob() {
+export function uploadBlob(): Promise<string[]> {
   return new Promise((resolve) => {
     window.requestAnimationFrame(() => {
       pendingCallback = resolve;

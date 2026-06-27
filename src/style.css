@@ -14,7 +14,7 @@ html {
 
 body,
 html {
-  height: 100vsh;
+  height: 100svh;
 }
 
 body {
@@ -97,7 +97,6 @@ textarea {
   margin: 0;
   padding: 14px;
   display: block;
-  top: var(--topnav-height);
   position: absolute;
   overflow: hidden;
   top: 0;

@@ -1,11 +1,10 @@
 import { memo } from 'react';
 
-type CharLayer = [number, number][];
-type CharLayers = CharLayer[];
+import { SEGMENTS } from '../types';
+import type { CharLayers } from '../types';
 
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_STROKE_WIDTH = 2;
-const SEGMENTS = [2, 4] as const;
 
 export const Key = memo(function Key({
   char,

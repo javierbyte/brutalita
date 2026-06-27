@@ -12,27 +12,21 @@ import FONT_DEFINITION_SRC from './font.json';
 
 import { Key } from './components/key';
 
+import { SEGMENTS } from './types';
+import type {
+  CharLayer,
+  CharLayers,
+  FontConfig,
+  FontDefinition,
+  FontWeightType,
+} from './types';
+
 import type { ReactNode } from 'react';
 
-type CharLayer = [number, number][];
-type CharLayers = CharLayer[];
-
-const weightToStrokeWidth = {
+const weightToStrokeWidth: Record<FontWeightType, number> = {
   300: 1.5,
   400: 2,
   700: 2.5,
-} as const;
-
-type FontWeightType = keyof typeof weightToStrokeWidth;
-
-export type FontConfig = {
-  name: string;
-  weight: FontWeightType;
-  height: number;
-  monospace: true | false;
-};
-export type FontDefinition = {
-  [char: string]: CharLayers;
 };
 
 const DEFAULT_FONT_CONFIG = {
@@ -60,18 +54,24 @@ const STATE: {
   font: fontSrcToTypedFont(FONT_DEFINITION_SRC),
 };
 
-function fontConfigReducer(
-  state: FontConfig,
-  action: {
-    type: string;
-    payload: any;
-  }
-) {
+type FontConfigAction =
+  | { type: 'rename'; payload: string }
+  | { type: 'change-weight'; payload: string }
+  | { type: 'change-width'; payload: boolean }
+  | { type: 'reset'; payload: FontConfig };
+
+function fontConfigReducer(state: FontConfig, action: FontConfigAction) {
   switch (action.type) {
     case 'rename':
       return { ...state, name: action.payload };
-    case 'change-weight':
-      return { ...state, weight: action.payload };
+    case 'change-weight': {
+      const weight = Number(action.payload);
+      const next = { ...state };
+      if (weight === 300 || weight === 400 || weight === 700) {
+        next.weight = weight;
+      }
+      return next;
+    }
     case 'change-width':
       return {
         ...state,
@@ -115,7 +115,6 @@ Uses OpenType.js to generate .otf files
 
 Made by @javierbyte`;
 
-const SEGMENTS = [2, 4] as const;
 const DOTSX = SEGMENTS[0];
 const DOTSY = SEGMENTS[1];
 
@@ -578,7 +577,7 @@ function App() {
           <button
             onClick={async () => {
               try {
-                const blob = (await uploadBlob()) as [string];
+                const blob = await uploadBlob();
                 let json = JSON.parse(blob[0]);
 
                 // Old Format Support

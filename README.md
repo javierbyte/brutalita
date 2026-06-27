@@ -6,4 +6,4 @@ Brutalita is an experimental font and font editor, edit in your browser and down
 
 The name means "little brutal" in spanish. Made with SVG and Opentype.JS
 
-- Download Brutalita: https://brutalita.com/Brutalita-Regular.otf
+- Download Brutalita: https://brutalita.com/Brutalita-400.otf

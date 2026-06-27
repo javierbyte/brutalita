@@ -1,9 +1,7 @@
 import Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
-import { FontConfig, FontDefinition } from './app';
+import { FontConfig, FontDefinition } from './types';
 import { downloadBlob } from './blob-utils';
-
-// import unicodeCsvSrc from './lib/named-character-references.csv';
 
 const CIRCLE_SEGMENTS = 16;
 
@@ -45,30 +43,6 @@ function coordToScale(
 
   return newCoord;
 }
-
-// const TO_COMBINE = {
-//   á: ['a', '´'],
-//   é: ['e', '´'],
-//   í: ['i', '´'],
-//   ó: ['o', '´'],
-//   ú: ['u', '´'],
-// };
-
-// async function getUnicodeCharNames() {
-//   return fetch(unicodeCsvSrc)
-//     .then((response) => response.text())
-//     .then((dataRaw) => {
-//       return dataRaw
-//         .trim()
-//         .split(`\n`)
-//         .map((e) => e.split(','))
-//         .reduce((res: { [key: string]: string }, row) => {
-//           const unicodeNumber = parseInt(row[1], 16);
-//           res[unicodeNumber] = row[0];
-//           return res;
-//         }, {});
-//     });
-// }
 
 function polar2cartesian({
   distance,
@@ -291,8 +265,6 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
     }
   }
 
-  // console.log('>> MAKING glyph,', { char, name, unicode });
-
   const min = Math.min(
     ...tmpPath.commands.map((e: any) => {
       return e.x;
@@ -330,14 +302,6 @@ export async function downloadFont(
   config: FontConfig
 ) {
   const { monospaceAdvance } = configToMetrics(config);
-  // Object.keys(TO_COMBINE).forEach((char) => {
-  //   console.log(char);
-  //   fontSrc[char] = [
-  //     ...fontSrc[TO_COMBINE[char][0]],
-  //     ...fontSrc[TO_COMBINE[char][1]],
-  //   ];
-  // });
-  // const unicodeCharNames = await getUnicodeCharNames();
 
   const notdefGlyph = new Opentype.Glyph({
     name: '.notdef',
