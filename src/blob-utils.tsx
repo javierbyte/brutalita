@@ -31,7 +31,7 @@ export function uploadBlob() {
   });
 }
 
-export function downloadBlob(name = 'file.txt', data: string) {
+export function downloadBlob(name = 'file.txt', data: BlobPart) {
   const blob = new Blob([data]);
   const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
