@@ -4,21 +4,37 @@
   "version": "0.3.0",
   "private": true,
   "homepage": "https://brutalita.com",
+  "bin": {
+    "brutalita": "cli/index.ts"
+  },
   "dependencies": {
     "@next/third-parties": "^16.2.9",
-    "@radix-ui/react-popover": "^1.1.17",
+    "@radix-ui/react-dialog": "^1.1.17",
+    "@radix-ui/react-separator": "^1.1.10",
+    "@radix-ui/react-slot": "^1.3.0",
+    "@radix-ui/react-toggle": "^1.1.12",
+    "@radix-ui/react-toggle-group": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.10",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.21.0",
     "next": "^16.2.9",
     "opentype.js": "^2.0.0",
     "polygon-clipping": "^0.15.7",
+    "radix-ui": "^1.6.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tailwind-merge": "^3.6.0",
     "typescript": "^6.0.3"
   },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "cli": "tsx cli/index.ts",
+    "fonts": "tsx cli/index.ts src/font.json -o public/Brutalita-300.otf -w 300 && tsx cli/index.ts src/font.json -o public/Brutalita-400.otf -w 400 && tsx cli/index.ts src/font.json -o public/Brutalita-700.otf -w 700",
+    "cover": "tsx scripts/update-cover.ts"
   },
   "repository": {
     "type": "git",
@@ -27,9 +43,14 @@
   "author": "Javier Bórquez <hi@javier.xyz>",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.1",
     "@types/node": "^26.0.1",
     "@types/opentype.js": "^1.3.10",
     "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.1",
+    "tsx": "^4.22.4",
+    "tw-animate-css": "^1.4.0"
   }
 }

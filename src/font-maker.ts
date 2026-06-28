@@ -1,7 +1,6 @@
 import Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
-import { FontConfig, FontDefinition } from './types';
-import { downloadBlob } from './blob-utils';
+import { FontConfig, FontDefinition, FontWeightType } from './types';
 
 const CIRCLE_SEGMENTS = 16;
 
@@ -10,6 +9,14 @@ const WEIGHTS = {
   '400': 0.25,
   '700': 0.3,
 } as const;
+
+// Human-readable OpenType subfamily name for each weight. opentype.js derives
+// fsSelection from weightClass automatically (>= 600 -> Bold, else Regular).
+const STYLE_NAME_BY_WEIGHT: Record<FontWeightType, string> = {
+  300: 'Light',
+  400: 'Regular',
+  700: 'Bold',
+};
 
 const CHAR_X = 2;
 const CHAR_Y = 4;
@@ -245,9 +252,22 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
   const unionPolygon = glyphPolygon.getUnion();
 
   let remainingSpaceTranslation = 0;
-  if (!config.monospace && unionPolygon[0]) {
-    remainingSpaceTranslation =
-      KERNING / 2 - Math.min(...unionPolygon[0][0].map((e) => e[0]));
+  if (!config.monospace) {
+    // Find the leftmost ink across ALL union polygons/rings. polygonClipping
+    // does not order its output left-to-right, so we cannot rely on the first
+    // polygon (unionPolygon[0]) being the leftmost — multi-blob glyphs ("i",
+    // "j", '"', "%") would otherwise get a wrong/negative left side bearing.
+    let globalMinX = Infinity;
+    for (const polygon of unionPolygon) {
+      for (const ring of polygon) {
+        for (const [x] of ring) {
+          if (x < globalMinX) globalMinX = x;
+        }
+      }
+    }
+    if (Number.isFinite(globalMinX)) {
+      remainingSpaceTranslation = KERNING / 2 - globalMinX;
+    }
   }
 
   const tmpPath = new Opentype.Path();
@@ -297,10 +317,18 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
   return tmpGlyph;
 }
 
-export async function downloadFont(
-  definition: FontDefinition,
-  config: FontConfig
-) {
+function fontName(config: FontConfig): string {
+  return `${config.name} ${config.monospace ? 'Mono' : ''}`.trim();
+}
+
+// Suggested .otf file name for a config, e.g. "Brutalita Custom-Regular.otf".
+export function fontFileName(config: FontConfig): string {
+  return `${fontName(config)}-${STYLE_NAME_BY_WEIGHT[config.weight]}.otf`;
+}
+
+// Build the opentype.js Font. Pure and Node-safe (no DOM), so the CLI can import
+// it directly. `font.toArrayBuffer()` serializes it to .otf bytes.
+export function buildFont(definition: FontDefinition, config: FontConfig) {
   const { monospaceAdvance } = configToMetrics(config);
 
   const notdefGlyph = new Opentype.Glyph({
@@ -319,18 +347,31 @@ export async function downloadFont(
 
   const glyphs = [notdefGlyph, ...newGlyphs];
 
-  const name = `${config.name} ${config.monospace ? 'Mono' : ''}`;
-
-  const font = new Opentype.Font({
-    familyName: name,
-    styleName: String(config.weight),
+  return new Opentype.Font({
+    familyName: fontName(config),
+    styleName: STYLE_NAME_BY_WEIGHT[config.weight],
     unitsPerEm: UNITS_PER_EM,
     ascender: ASCENDER,
     descender: DESCENDER,
+    // @types/opentype.js mistypes weightClass as string, but the runtime stores
+    // it directly as the numeric OS/2 usWeightClass (and derives fsSelection from it).
+    weightClass: config.weight as unknown as string,
+    designer: config.designer?.trim() || undefined,
+    designerURL: config.designerURL?.trim() || undefined,
     glyphs: glyphs,
   });
+}
+
+export async function downloadFont(
+  definition: FontDefinition,
+  config: FontConfig
+) {
+  const font = buildFont(definition, config);
 
   // opentype.js v2 deprecated Font.download() (no platform-specific actions);
-  // serialize to an ArrayBuffer and trigger the download ourselves.
-  downloadBlob(`${name.trim()}-${config.weight}.otf`, font.toArrayBuffer());
+  // serialize to an ArrayBuffer and trigger the download ourselves. blob-utils
+  // touches `document` at module load, so import it lazily — that keeps this
+  // module importable in Node (the CLI imports buildFont from here).
+  const { downloadBlob } = await import('./blob-utils');
+  downloadBlob(fontFileName(config), font.toArrayBuffer());
 }
