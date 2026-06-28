@@ -139,6 +139,12 @@ function parseFont(json: any): { config: FontConfig; chars: FontDefinition } {
   return { config: newConfig, chars: json.chars };
 }
 
+// ensures there is always a trailing empty layer so the editor shows an
+// empty cell ready to start a new layer
+function withTrailingEmptyLayer(layers: CharLayers): CharLayers {
+  return [...layers.filter((layer) => layer.length), []];
+}
+
 // removes empty layers of font definition
 function cleanFontForExport(fontDefinition: FontDefinition) {
   const orderedChars = Object.keys(fontDefinition).sort((a, b) => {
@@ -299,7 +305,7 @@ function EditorContainer({
       newEditingBase = STATE.font[editingChar];
     }
 
-    layersSet(newEditingBase as CharLayers);
+    layersSet(withTrailingEmptyLayer(newEditingBase as CharLayers));
   }, [editingChar, layersSet]);
 
   function onChangeEditor(layerIdx: number, val: CharLayer) {
@@ -316,8 +322,7 @@ function EditorContainer({
       }
     }
 
-    charLayersCopy = charLayersCopy.filter((layer) => layer.length);
-    charLayersCopy.push([]);
+    charLayersCopy = withTrailingEmptyLayer(charLayersCopy);
 
     layersSet(charLayersCopy);
     STATE.font[editingChar] = charLayersCopy;
