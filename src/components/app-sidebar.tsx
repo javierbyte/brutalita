@@ -18,7 +18,9 @@ export function AppSidebar({ editorView }: AppSidebarProps) {
       <SidebarHeader className="p-2">
         <div className="px-1 text-sm font-medium">Editor</div>
       </SidebarHeader>
-      <SidebarContent className="px-2 pb-4">{editorView}</SidebarContent>
+      <SidebarContent className="overflow-x-hidden px-2 pb-4">
+        {editorView}
+      </SidebarContent>
     </Sidebar>
   );
 }

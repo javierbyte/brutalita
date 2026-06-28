@@ -262,6 +262,7 @@ function Editor({
       <svg
         viewBox={`-1 -1 ${DOTSX + 2} ${DOTSY + 2}`}
         style={{
+          position: 'absolute',
           top: -EDITOR_GAP,
           left: -EDITOR_GAP,
           height: (DOTSY + 2) * EDITOR_GAP,
