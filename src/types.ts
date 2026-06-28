@@ -11,6 +11,8 @@ export type FontConfig = {
   weight: FontWeightType;
   height: number;
   monospace: boolean;
+  designer?: string;
+  designerURL?: string;
 };
 
 export type FontDefinition = {

@@ -86,12 +86,32 @@ export function AppMenubar({
       >
         {/* Brutalita (about) --------------------------------------------- */}
         <MenubarMenu value="about">
-          <MenubarTrigger className="font-bold">Brutalita</MenubarTrigger>
+          <MenubarTrigger>
+            <img
+              src="/brutalita-logo.svg"
+              alt="Brutalita"
+              className="h-4 w-auto select-none"
+            />
+          </MenubarTrigger>
           <MenubarContent className="w-72">
-            <p className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
-              Brutalita is an experimental font and editor. Create and download
-              your own font.
-            </p>
+            <div className="space-y-2 px-2 py-1.5 text-sm leading-relaxed text-foreground">
+              <p>
+                Brutalita is an experimental font and editor. Create and
+                download your own font.
+              </p>
+              <p>
+                Built with{' '}
+                <a
+                  href="https://opentype.js.org/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  OpenType.js
+                </a>{' '}
+                to generate the .otf files.
+              </p>
+            </div>
             <MenubarSeparator />
             {ABOUT_LINKS.map((link) => (
               <MenubarItem key={link.href} asChild>
@@ -181,6 +201,34 @@ export function AppMenubar({
                     Proportional
                   </ToggleGroupItem>
                 </ToggleGroup>
+              </Field>
+
+              <Field label="Designer">
+                <Input
+                  className="h-8"
+                  value={fontConfig.designer ?? ''}
+                  spellCheck={false}
+                  onChange={(event) =>
+                    fontConfigDispatch({
+                      type: 'change-designer',
+                      payload: event.target.value,
+                    })
+                  }
+                />
+              </Field>
+
+              <Field label="Designer URL">
+                <Input
+                  className="h-8"
+                  value={fontConfig.designerURL ?? ''}
+                  spellCheck={false}
+                  onChange={(event) =>
+                    fontConfigDispatch({
+                      type: 'change-designer-url',
+                      payload: event.target.value,
+                    })
+                  }
+                />
               </Field>
 
               <div className="-mx-3 h-px bg-border" />

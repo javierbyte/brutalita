@@ -8,12 +8,16 @@ export const DEFAULT_FONT_CONFIG: FontConfig = {
   weight: 400,
   height: 1.888,
   monospace: true,
+  designer: 'javierbyte',
+  designerURL: 'https://javier.xyz',
 };
 
 export type FontConfigAction =
   | { type: 'rename'; payload: string }
   | { type: 'change-weight'; payload: string }
   | { type: 'change-width'; payload: boolean }
+  | { type: 'change-designer'; payload: string }
+  | { type: 'change-designer-url'; payload: string }
   | { type: 'reset'; payload: FontConfig };
 
 export type FontConfigDispatch = (action: FontConfigAction) => void;
@@ -35,6 +39,10 @@ export function fontConfigReducer(state: FontConfig, action: FontConfigAction) {
         ...state,
         monospace: action.payload,
       };
+    case 'change-designer':
+      return { ...state, designer: action.payload };
+    case 'change-designer-url':
+      return { ...state, designerURL: action.payload };
     case 'reset':
       return action.payload;
     default:

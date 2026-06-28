@@ -3,7 +3,9 @@
     "name": "Brutalita v0.8",
     "weight": 400,
     "height": 1.888,
-    "monospace": false
+    "monospace": false,
+    "designer": "javierbyte",
+    "designerURL": "https://javier.xyz"
   },
   "chars": {
     "0": [
@@ -988,19 +990,19 @@
           0
         ],
         [
-          1,
+          0.5,
           0
         ],
         [
           0,
-          1
+          0.5
         ],
         [
           0,
-          3
+          3.5
         ],
         [
-          1,
+          0.5,
           4
         ],
         [
@@ -1285,7 +1287,7 @@
         ],
         [
           1,
-          3
+          2
         ],
         [
           2,

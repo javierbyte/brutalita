@@ -64,7 +64,7 @@ const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-const DEFAULT_TEXT = `BRUTALITA v0.8
+const DEFAULT_TEXT = `Brutalita Sans v0.8
 
 ${ALL_CHARS.join(``)}
 
@@ -133,6 +133,10 @@ function parseFont(json: any): { config: FontConfig; chars: FontDefinition } {
   if (newWeight === 300 || newWeight === 400 || newWeight === 700) {
     newConfig.weight = newWeight;
   }
+
+  if (json.config.designer) newConfig.designer = String(json.config.designer);
+  if (json.config.designerURL)
+    newConfig.designerURL = String(json.config.designerURL);
 
   validateCharFontDefinition(json.chars);
 
@@ -499,7 +503,7 @@ function App() {
   }
 
   return (
-    <SidebarProvider style={{ '--sidebar-width': '14rem' } as CSSProperties}>
+    <SidebarProvider style={{ '--sidebar-width': '12rem' } as CSSProperties}>
       <SidebarInset>
         <AppMenubar
           fontConfig={fontConfig}
