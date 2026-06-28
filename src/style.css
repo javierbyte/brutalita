@@ -28,10 +28,8 @@ body {
 }
 
 body,
-html,
-select,
-option {
-  font-size: 24px;
+html {
+  font-size: 16px;
 }
 
 :root {
@@ -40,55 +38,71 @@ option {
   --topnav-button-height: 32px;
 }
 
-button,
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
-    sans-serif;
-  color: #ccc;
-}
+/*
+  These global element resets live in @layer base so the shadcn app-layer
+  components (in Tailwind's @layer utilities) can override them. Unlayered CSS
+  always beats layered CSS, so leaving these unlayered would force every shadcn
+  button/tab/toggle background to transparent. They still win over Tailwind's
+  preflight (same layer, declared later) and over nothing in the brutalist
+  editor (its class rules below stay unlayered and win).
+*/
+@layer base {
+  button,
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+      sans-serif;
+    color: #ccc;
+  }
 
-button {
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-  margin: 0;
-  display: block;
-  background-color: transparent;
-}
-button:hover {
-  background-color: #222;
-}
+  button {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    margin: 0;
+    display: block;
+    background-color: transparent;
+  }
+  button:hover {
+    background-color: #222;
+  }
 
-* {
-  position: relative;
-}
+  * {
+    position: relative;
+  }
 
-a {
-  text-decoration: none;
-  color: #74b9ff;
-}
-a::after {
-  content: '';
-  display: block;
-  width: 100%;
-  height: 6px;
-  background: #74b9ff15;
-  position: absolute;
-  left: 0;
-  top: 100%;
-  margin-top: -6px;
-  z-index: -1;
-}
+  a {
+    text-decoration: none;
+    color: #74b9ff;
+  }
+  a::after {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 6px;
+    background: #74b9ff15;
+    position: absolute;
+    left: 0;
+    top: 100%;
+    margin-top: -6px;
+    z-index: -1;
+  }
 
-a:hover {
-  color: #0984e3;
-}
+  a:hover {
+    color: #0984e3;
+  }
 
-hr {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-top: 2px solid rgba(0, 0, 0, 0.2);
+  /* The app-layer sidebar (shadcn) opts out of the brutalist link underline bar. */
+  [data-slot='button']::after,
+  .app-sidebar a::after {
+    display: none;
+  }
+
+  hr {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-top: 2px solid rgba(0, 0, 0, 0.2);
+  }
 }
 
 .type,
@@ -168,90 +182,21 @@ svg {
   color: red;
 }
 
-.sidebar {
+/* The character editor now lives inside the app-layer shadcn sidebar. */
+.editor-container {
   user-select: none;
-  z-index: 200;
-  position: fixed;
-
-  bottom: 0;
-  left: 0;
-  width: 100vw;
-  height: auto;
-  overflow-x: scroll;
-  overflow-y: hidden;
-
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 28px;
-  padding: 16px 16px 24px;
-  border-left: none;
-  border-top: 1px solid var(--separator-color);
-
-  background-color: #28282880;
-  backdrop-filter: blur(16px);
-}
-
-@media screen and (min-width: 1000px) {
-  .sidebar {
-    top: var(--topnav-height);
-    right: 0;
-    left: auto;
-    width: 190px;
-    height: calc(100vh - var(--topnav-height));
-    flex-direction: column;
-    overflow-x: hidden;
-    overflow-y: scroll;
-    border-top: none;
-    border-left: 1px solid var(--separator-color);
-  }
+  padding: 12px 4px 24px;
 }
 
 .scroller {
-  top: var(--topnav-height);
-  height: calc(100vh - var(--topnav-height));
-  height: calc(100svh - var(--topnav-height));
+  height: 100vh;
+  height: 100svh;
   overflow-x: hidden;
   overflow-y: scroll;
-}
-@media screen and (max-width: 1000px) {
-  .scroller {
-    top: var(--topnav-height);
-    height: calc(100vh - var(--topnav-height) - 180px);
-    height: calc(100svh - var(--topnav-height) - 180px);
-  }
-}
-
-.jbx-tabs {
-  width: 250px;
-  display: flex;
-  background-color: #333;
-  border-radius: 6px;
-  padding: 2px;
-  box-shadow: inset #2224 0 2px 2px;
-}
-.jbx-tabs button {
-  flex: 1;
-  height: 40px;
-  border-radius: 6px;
-}
-.jbx-tabs button.active {
-  background-color: #444;
-  box-shadow: inset #fff1 0 1px 0, rgba(0, 0, 0, 0.1) 0 1px 0;
-  color: white;
-  font-weight: 700;
-}
-
-.jbx-input {
-  appearance: none;
-  border: none;
-  font-size: 16px;
-  border-radius: 6px;
-  padding: 6px;
-  height: 40px;
-  width: 100%;
-  background-color: #333;
-  box-shadow: inset #2224 0 2px 2px;
-  color: white;
 }
 
 .editor-input {
@@ -312,168 +257,18 @@ svg {
   position: absolute;
 }
 
-.topnav {
-  user-select: none;
-  display: flex;
-  align-items: center;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  padding: 0 8px;
-  z-index: 300;
-  font-size: 15px;
-  width: 100vw;
-  height: var(--topnav-height);
-  border-bottom: 1px solid var(--separator-color);
-
-  background-color: #28282880;
-  backdrop-filter: blur(16px);
-}
-.topnav.-responsive {
-  height: auto;
-  min-height: var(--topnav-height);
-  flex-wrap: wrap;
-}
-.topnav.-responsive .-hide-on-mobile {
-  display: initial !important;
-}
-
-.topnav button {
-  border: none;
-  font-size: 15px;
-  margin: 0;
-  padding: 0 16px;
-}
-.topnav > button {
-  height: var(--topnav-height);
-}
-.topnav button[data-state='open'] {
-  background-color: #111;
-}
-.topnav button[data-state='open']::after {
-  content: '';
-  display: block;
-  border: 10px solid transparent;
-  border-bottom: 10px solid #444;
-  position: absolute;
-  bottom: -5px;
-  left: 50%;
-  margin-left: -10px;
-}
-
-.jbx-menu {
-  padding: 0 10px;
-  height: var(--topnav-height);
-  line-height: var(--topnav-height);
-  position: relative;
-  cursor: pointer;
-}
-.jbx-menu:hover {
-  background: #333;
-}
-
-.jbx-menu.-open {
-  background-color: #111;
-}
-
-.jbx-menu-options {
-  background: #111;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  width: 250px;
-}
-
-.jbx-menu-option {
-  padding: 0 10px;
-  border-bottom: 1px solid #333;
-}
-
-.jbx-menu-option:hover {
-  background: #000;
-}
-
-.jbx-popover {
-  margin: 3px;
-  background-color: #444;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: rgba(0, 0, 0, 0.13) 0 1px 0, rgba(16, 16, 16, 0.5) 0 4px 8px;
-  overflow: hidden;
-  border-bottom: 1px solid #fff1;
-}
-.jbx-popover > button {
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 6px;
-  width: 100%;
-  text-align: left;
-  line-height: 1;
-}
-.jbx-popover .jbx-popover--content {
-  padding: 8px 0;
-}
-
-.jbx-popover .jbx-popover--title {
-  padding: 12px 0 4px;
-  text-transform: uppercase;
-  font-size: 12px;
-  font-weight: 600;
-  text-shadow: #0001 0 -1px 0;
-}
-
-.jbx-popover .jbx-popover--title:first-child {
-  padding-top: 0;
-}
-
-.jbx-popover .jbx-input {
-  padding: 8px 16px;
-}
-.jbx-popover .jbx-input:focus {
-  outline: none;
-  box-shadow: #e84393 0 0 0 0.5px, #e8439340 0 0 0 3px, yellow 0 0 14px -10px;
-}
-
-.sidebar button {
+.editor-controls button {
   background-color: #444;
   border: none;
   padding: 0 8px;
   height: 24px;
   line-height: 1;
   margin: 0;
+  border-radius: 6px;
 }
-.sidebar button:hover {
+.editor-controls button:hover {
   background-color: #555;
   color: #fff;
-}
-
-.-hide-on-mobile {
-  display: none;
-}
-.-show-only-mobile {
-  display: initial;
-}
-
-@media screen and (min-width: 920px) {
-  .-hide-on-mobile {
-    display: initial;
-  }
-  .-show-only-mobile {
-    display: none;
-  }
-}
-
-@media screen and (min-width: 640px) {
-  .quick-links {
-    display: flex !important;
-  }
-}
-
-.quick-links {
-  flex: 1;
-  display: none;
-  justify-content: flex-end;
 }
 
 .quick-links a {

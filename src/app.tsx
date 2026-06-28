@@ -3,7 +3,7 @@
 /* eslint react/prop-types: 0 */
 
 import { Fragment, useState, useEffect, useReducer } from 'react';
-import * as PopoverPrimitive from '@radix-ui/react-popover';
+import type { CSSProperties } from 'react';
 
 import { downloadBlob, uploadBlob } from './blob-utils';
 import { downloadFont } from './font-maker';
@@ -11,6 +11,13 @@ import { downloadFont } from './font-maker';
 import FONT_DEFINITION_SRC from './font.json';
 
 import { Key } from './components/key';
+import { AppSidebar } from './components/app-sidebar';
+import { DEFAULT_FONT_CONFIG, fontConfigReducer } from './font-config';
+import {
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
 
 import { SEGMENTS } from './types';
 import type {
@@ -21,20 +28,11 @@ import type {
   FontWeightType,
 } from './types';
 
-import type { ReactNode } from 'react';
-
 const weightToStrokeWidth: Record<FontWeightType, number> = {
   300: 1.5,
   400: 2,
   700: 2.5,
 };
-
-const DEFAULT_FONT_CONFIG = {
-  name: 'Brutalita Custom',
-  weight: 400,
-  height: 1.888,
-  monospace: true,
-} as const;
 
 function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
   const typedFont: FontDefinition = {};
@@ -53,36 +51,6 @@ const STATE: {
 } = {
   font: fontSrcToTypedFont(FONT_DEFINITION_SRC),
 };
-
-type FontConfigAction =
-  | { type: 'rename'; payload: string }
-  | { type: 'change-weight'; payload: string }
-  | { type: 'change-width'; payload: boolean }
-  | { type: 'reset'; payload: FontConfig };
-
-function fontConfigReducer(state: FontConfig, action: FontConfigAction) {
-  switch (action.type) {
-    case 'rename':
-      return { ...state, name: action.payload };
-    case 'change-weight': {
-      const weight = Number(action.payload);
-      const next = { ...state };
-      if (weight === 300 || weight === 400 || weight === 700) {
-        next.weight = weight;
-      }
-      return next;
-    }
-    case 'change-width':
-      return {
-        ...state,
-        monospace: action.payload,
-      };
-    case 'reset':
-      return action.payload;
-    default:
-      throw new Error();
-  }
-}
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
 const REMAINING_CHARS = Object.keys(STATE.font)
@@ -313,34 +281,6 @@ function Editor({
   );
 }
 
-function Tabs({
-  options,
-  value,
-  onChange,
-}: {
-  options: string[];
-  value: string;
-  onChange: (newValue: string) => void;
-}) {
-  return (
-    <div className="jbx-tabs">
-      {options.map((option) => {
-        return (
-          <button
-            key={option}
-            className={option === value ? 'active' : ''}
-            onClick={() => {
-              onChange(option);
-            }}
-          >
-            {option}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function EditorContainer({
   onChange,
   editingChar,
@@ -385,7 +325,7 @@ function EditorContainer({
   }
 
   return (
-    <div className="sidebar">
+    <div className="editor-container">
       <div style={{ display: 'flex', gap: 12 }}>
         <div className="editor-input-container">
           <div className="editor-input-label">Editing</div>
@@ -457,17 +397,6 @@ function Write({
   );
 }
 
-function Menu({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <PopoverPrimitive.Root>
-      <PopoverPrimitive.Trigger>{title}</PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Content className="jbx-popover">
-        {children}
-      </PopoverPrimitive.Content>
-    </PopoverPrimitive.Root>
-  );
-}
-
 function App() {
   const [fontConfig, fontConfigDispatch] = useReducer(
     fontConfigReducer,
@@ -492,16 +421,19 @@ function App() {
 
   useEffect(() => {
     function resize() {
-      const bodyWidth = (
-        document.querySelector('body') as HTMLElement
-      ).getBoundingClientRect().width;
+      // Size the preview to the main content area (the sidebar inset), which
+      // already excludes the shadcn sidebar width on desktop.
+      const insetEl = document.querySelector(
+        '[data-slot="sidebar-inset"]'
+      ) as HTMLElement | null;
 
-      const sidebarWidth = (
-        document.querySelector('.sidebar') as HTMLElement
-      ).getBoundingClientRect().width;
+      const availableWidth = insetEl
+        ? insetEl.getBoundingClientRect().width
+        : (document.querySelector('body') as HTMLElement).getBoundingClientRect()
+            .width;
 
       const availableChars = Math.min(
-        Math.floor((bodyWidth - (sidebarWidth < 200 ? sidebarWidth : 0)) / 14),
+        Math.floor((availableWidth - 32) / 14),
         160
       );
 
@@ -518,147 +450,90 @@ function App() {
     return () => window.removeEventListener('resize', resize);
   }, []);
 
+  function onExportOtf() {
+    downloadFont(STATE.font, fontConfig);
+  }
+
+  function onExportJson() {
+    downloadBlob(
+      `brutalita-${new Date().getTime()}.json`,
+      JSON.stringify(
+        {
+          config: fontConfig,
+          chars: cleanFontForExport(STATE.font),
+        },
+        null,
+        2
+      )
+    );
+  }
+
+  async function onImport() {
+    try {
+      const blob = await uploadBlob();
+      let json = JSON.parse(blob[0]);
+
+      // Old Format Support
+      if (!json.config) {
+        json = {
+          chars: json,
+          config: { ...DEFAULT_FONT_CONFIG },
+        };
+      }
+
+      const { config, chars } = parseFont(json);
+
+      STATE.font = chars;
+      fontConfigDispatch({ type: 'reset', payload: config });
+      fontLoadTrackSet(new Date().getTime());
+      fontChangeTrackSet(new Date().getTime() + 1);
+    } catch (e) {
+      alert(`Unable to load font file.`);
+    }
+  }
+
   return (
-    <Fragment>
-      <div className="scroller">
-        <textarea
-          style={{ height: textAreaHeight, width: 14 * charWidth }}
-          spellCheck="false"
-          value={text}
-          onChange={(e) => {
-            textSet(e.target.value);
-          }}
-        />
+    <SidebarProvider
+      style={{ '--sidebar-width': '18rem' } as CSSProperties}
+    >
+      <SidebarInset>
+        <SidebarTrigger className="fixed top-2 right-2 z-50 md:hidden" />
+        <div className="scroller">
+          <textarea
+            style={{ height: textAreaHeight, width: 14 * charWidth }}
+            spellCheck="false"
+            value={text}
+            onChange={(e) => {
+              textSet(e.target.value);
+            }}
+          />
 
-        <div
-          key={fontChangeTrack}
-          className="type"
-          style={{ width: 14 * charWidth }}
-        >
-          <Write message={text} fontWeight={fontConfig.weight} />
+          <div
+            key={fontChangeTrack}
+            className="type"
+            style={{ width: 14 * charWidth }}
+          >
+            <Write message={text} fontWeight={fontConfig.weight} />
+          </div>
         </div>
-      </div>
+      </SidebarInset>
 
-      <EditorContainer
-        key={fontLoadTrack}
-        editingChar={editingChar}
-        onChangeEditingChar={editingCharSet}
-        onChange={onFontChange}
+      <AppSidebar
+        fontConfig={fontConfig}
+        fontConfigDispatch={fontConfigDispatch}
+        onExportOtf={onExportOtf}
+        onExportJson={onExportJson}
+        onImport={onImport}
+        editorView={
+          <EditorContainer
+            key={fontLoadTrack}
+            editingChar={editingChar}
+            onChangeEditingChar={editingCharSet}
+            onChange={onFontChange}
+          />
+        }
       />
-
-      <nav className={`topnav`}>
-        <Menu title="Export">
-          <button
-            onClick={() => {
-              downloadFont(STATE.font, fontConfig);
-            }}
-          >
-            Font (.otf)
-          </button>
-          <button
-            onClick={() => {
-              downloadBlob(
-                `brutalita-${new Date().getTime()}.json`,
-                JSON.stringify(
-                  {
-                    config: fontConfig,
-                    chars: cleanFontForExport(STATE.font),
-                  },
-                  null,
-                  2
-                )
-              );
-            }}
-          >
-            Font Definition (.json)
-          </button>
-        </Menu>
-        <Menu title="Import">
-          <button
-            onClick={async () => {
-              try {
-                const blob = await uploadBlob();
-                let json = JSON.parse(blob[0]);
-
-                // Old Format Support
-                if (!json.config) {
-                  json = {
-                    chars: json,
-                    config: { ...DEFAULT_FONT_CONFIG },
-                  };
-                }
-
-                const { config, chars } = parseFont(json);
-
-                STATE.font = chars;
-                fontConfigDispatch({ type: 'reset', payload: config });
-                fontLoadTrackSet(new Date().getTime());
-                fontChangeTrackSet(new Date().getTime() + 1);
-              } catch (e) {
-                alert(`Unable to load font file.`);
-              }
-            }}
-          >
-            Font Definition (.json)
-          </button>
-        </Menu>
-        <Menu title="Settings">
-          <div className="jbx-popover--title">Font Name</div>
-          <input
-            className="jbx-input"
-            value={fontConfig.name}
-            onChange={(evt) =>
-              fontConfigDispatch({ type: 'rename', payload: evt.target.value })
-            }
-            spellCheck={false}
-          />
-          <div className="jbx-popover--title">Font Weight</div>
-          <Tabs
-            options={['300', '400', '700']}
-            value={String(fontConfig.weight)}
-            onChange={(newValue) =>
-              fontConfigDispatch({ type: 'change-weight', payload: newValue })
-            }
-          />
-          <div className="jbx-popover--title">Width</div>
-          <Tabs
-            options={['Monospace', 'Proportional']}
-            onChange={(newValue) =>
-              fontConfigDispatch({
-                type: 'change-width',
-                payload: newValue === 'Monospace',
-              })
-            }
-            value={fontConfig.monospace ? 'Monospace' : 'Proportional'}
-          />
-        </Menu>
-        <Menu title="About">
-          Download the unmodified font:
-          <div className="jbx-popover--content">
-            <a href="/Brutalita-300.otf">Download Brutalita 300</a>
-          </div>
-          <div className="jbx-popover--content">
-            <a href="/Brutalita-400.otf">Download Brutalita 400</a>
-          </div>
-          <div className="jbx-popover--content">
-            <a href="/Brutalita-700.otf">Download Brutalita 700</a>
-          </div>
-          <hr />
-          <div className="jbx-popover--content">
-            Made by <a href="https://javier.xyz">Javier Bórquez</a>.
-          </div>
-          <hr />
-          <div className="jbx-popover--content">
-            <a href="https://github.com/javierbyte/brutalita">Github Repo</a>
-          </div>
-        </Menu>
-
-        <div className="quick-links">
-          <a href="https://github.com/javierbyte/brutalita">Github repo</a>
-          <a href="https://x.com/javierbyte">@javierbyte</a>
-        </div>
-      </nav>
-    </Fragment>
+    </SidebarProvider>
   );
 }
 

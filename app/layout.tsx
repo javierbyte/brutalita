@@ -1,8 +1,11 @@
+import '@/app/globals.css';
 import '@/src/style.css';
 
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { GoogleAnalytics } from '@next/third-parties/google';
+
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const TITLE = 'Brutalita Sans';
 const DESCRIPTION =
@@ -40,9 +43,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body>
-        {children}
+        <TooltipProvider>{children}</TooltipProvider>
         <noscript>
           <h1>Brutalita Sans</h1>
           <p>
