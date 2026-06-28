@@ -32,7 +32,9 @@
     "build": "next build",
     "start": "next start",
     "deploy": "vercel --prod",
-    "cli": "tsx cli/index.ts"
+    "cli": "tsx cli/index.ts",
+    "fonts": "tsx cli/index.ts src/font.json -o public/Brutalita-300.otf -w 300 && tsx cli/index.ts src/font.json -o public/Brutalita-400.otf -w 400 && tsx cli/index.ts src/font.json -o public/Brutalita-700.otf -w 700",
+    "cover": "tsx scripts/update-cover.ts"
   },
   "repository": {
     "type": "git",

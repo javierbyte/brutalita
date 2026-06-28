@@ -295,6 +295,17 @@ export function AppMenubar({
             </p>
           </MenubarContent>
         </MenubarMenu>
+
+        {/* Source --------------------------------------------------------- */}
+        {/* Plain link, not a dropdown: styled to match the menubar triggers. */}
+        <a
+          href="https://github.com/javierbyte/brutalita"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center rounded-sm px-2 py-1 text-sm font-medium text-foreground outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+        >
+          Source
+        </a>
       </Menubar>
     </div>
   );
