@@ -245,9 +245,22 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
   const unionPolygon = glyphPolygon.getUnion();
 
   let remainingSpaceTranslation = 0;
-  if (!config.monospace && unionPolygon[0]) {
-    remainingSpaceTranslation =
-      KERNING / 2 - Math.min(...unionPolygon[0][0].map((e) => e[0]));
+  if (!config.monospace) {
+    // Find the leftmost ink across ALL union polygons/rings. polygonClipping
+    // does not order its output left-to-right, so we cannot rely on the first
+    // polygon (unionPolygon[0]) being the leftmost — multi-blob glyphs ("i",
+    // "j", '"', "%") would otherwise get a wrong/negative left side bearing.
+    let globalMinX = Infinity;
+    for (const polygon of unionPolygon) {
+      for (const ring of polygon) {
+        for (const [x] of ring) {
+          if (x < globalMinX) globalMinX = x;
+        }
+      }
+    }
+    if (Number.isFinite(globalMinX)) {
+      remainingSpaceTranslation = KERNING / 2 - globalMinX;
+    }
   }
 
   const tmpPath = new Opentype.Path();

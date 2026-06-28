@@ -12,12 +12,9 @@ import FONT_DEFINITION_SRC from './font.json';
 
 import { Key } from './components/key';
 import { AppSidebar } from './components/app-sidebar';
+import { AppMenubar } from './components/app-menubar';
 import { DEFAULT_FONT_CONFIG, fontConfigReducer } from './font-config';
-import {
-  SidebarProvider,
-  SidebarInset,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 
 import { SEGMENTS } from './types';
 import type {
@@ -497,9 +494,15 @@ function App() {
   }
 
   return (
-    <SidebarProvider style={{ '--sidebar-width': '18rem' } as CSSProperties}>
+    <SidebarProvider style={{ '--sidebar-width': '14rem' } as CSSProperties}>
       <SidebarInset>
-        <SidebarTrigger className="fixed top-2 right-2 z-50 md:hidden" />
+        <AppMenubar
+          fontConfig={fontConfig}
+          fontConfigDispatch={fontConfigDispatch}
+          onExportOtf={onExportOtf}
+          onExportJson={onExportJson}
+          onImport={onImport}
+        />
         <div className="scroller">
           <textarea
             style={{ height: textAreaHeight, width: 14 * charWidth }}
@@ -521,11 +524,6 @@ function App() {
       </SidebarInset>
 
       <AppSidebar
-        fontConfig={fontConfig}
-        fontConfigDispatch={fontConfigDispatch}
-        onExportOtf={onExportOtf}
-        onExportJson={onExportJson}
-        onImport={onImport}
         editorView={
           <EditorContainer
             key={fontLoadTrack}

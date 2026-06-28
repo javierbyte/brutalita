@@ -97,6 +97,15 @@ html {
     display: none;
   }
 
+  /* Menubar content renders in a portal (outside .app-sidebar), so its links
+     opt out of the brutalist blue link colour + underline bar too. */
+  [data-slot='menubar-content'] a {
+    color: inherit;
+  }
+  [data-slot='menubar-content'] a::after {
+    display: none;
+  }
+
   hr {
     margin: 0;
     padding: 0;
@@ -139,7 +148,9 @@ textarea {
   letter-spacing: 0;
   font-family: Courier, monospace;
   line-height: 30px;
-  z-index: 100;
+  /* Sits above the rendered glyph layer (.type) for caret/selection, but below
+     Radix overlays (popover/menu/sheet are z-50) so dropdowns stay clickable. */
+  z-index: 10;
   resize: none;
   caret-color: white;
   outline: none;
@@ -193,8 +204,9 @@ svg {
 }
 
 .scroller {
-  height: 100vh;
-  height: 100svh;
+  /* Fill the sidebar inset below the menubar bar (--topnav-height). */
+  height: calc(100vh - var(--topnav-height));
+  height: calc(100svh - var(--topnav-height));
   overflow-x: hidden;
   overflow-y: scroll;
 }
