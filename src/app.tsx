@@ -46,10 +46,13 @@ function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
   return typedFont;
 }
 
+const { config: INITIAL_FONT_CONFIG, chars: FONT_CHARS_SRC } =
+  parseFont(FONT_DEFINITION_SRC);
+
 const STATE: {
   font: FontDefinition;
 } = {
-  font: fontSrcToTypedFont(FONT_DEFINITION_SRC),
+  font: fontSrcToTypedFont(FONT_CHARS_SRC),
 };
 
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
@@ -64,7 +67,7 @@ const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-const DEFAULT_TEXT = `BRUTALITA v0.7
+const DEFAULT_TEXT = `BRUTALITA v0.8
 
 ${ALL_CHARS.join(``)}
 
@@ -400,7 +403,7 @@ function Write({
 function App() {
   const [fontConfig, fontConfigDispatch] = useReducer(
     fontConfigReducer,
-    DEFAULT_FONT_CONFIG
+    INITIAL_FONT_CONFIG
   );
   const [editingChar, editingCharSet] = useState('Q');
   const [textAreaHeight, textAreaHeightSet] = useState(window.innerHeight);
@@ -429,8 +432,9 @@ function App() {
 
       const availableWidth = insetEl
         ? insetEl.getBoundingClientRect().width
-        : (document.querySelector('body') as HTMLElement).getBoundingClientRect()
-            .width;
+        : (
+            document.querySelector('body') as HTMLElement
+          ).getBoundingClientRect().width;
 
       const availableChars = Math.min(
         Math.floor((availableWidth - 32) / 14),
@@ -493,9 +497,7 @@ function App() {
   }
 
   return (
-    <SidebarProvider
-      style={{ '--sidebar-width': '18rem' } as CSSProperties}
-    >
+    <SidebarProvider style={{ '--sidebar-width': '18rem' } as CSSProperties}>
       <SidebarInset>
         <SidebarTrigger className="fixed top-2 right-2 z-50 md:hidden" />
         <div className="scroller">
