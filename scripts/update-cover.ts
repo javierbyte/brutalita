@@ -1,7 +1,10 @@
 #!/usr/bin/env -S npx tsx
 // Regenerate the README preview banner (public/brutalita-cover.svg) from the
 // current font in src/font.json, using the same stroke renderer as the CLI's
-// SVG export so the cover always reflects the live glyphs.
+// `render` command so the cover always reflects the live glyphs.
+//
+// This stays a script rather than a plain CLI call because the banner text
+// interpolates the font's own name from its config.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { renderTextToSVG } from '../src/svg-export';
@@ -38,28 +41,14 @@ const { svg, missing } = renderTextToSVG(chars, text, {
   monospace: config.monospace, // src/font.json is proportional (monospace: false)
   color: STROKE,
   padding: PADDING,
+  background: BACKGROUND,
+  width: TARGET_WIDTH,
 });
 
-// renderTextToSVG fits the canvas tightly and ships no background. Scale the
-// whole thing up to TARGET_WIDTH and drop a dark rect behind it so the white
-// strokes read on GitHub, matching the look/size of the previous banner.
-const open = svg.match(/<svg[^>]*>/)?.[0];
-const box = open?.match(/viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/);
-if (!open || !box) throw new Error('could not parse the rendered SVG header');
+writeFileSync(OUT, svg);
 
-const [vx, vy, vw, vh] = box.slice(1).map(Number);
-const scale = TARGET_WIDTH / vw;
-const width = Math.round(vw * scale);
-const height = Math.round(vh * scale);
-
-const header =
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-  `viewBox="${vx} ${vy} ${vw} ${vh}">\n` +
-  `  <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="${BACKGROUND}" />`;
-
-writeFileSync(OUT, svg.replace(open, header));
-
-process.stdout.write(`wrote ${OUT} (${width}x${height})\n`);
+const size = /width="(\d+)" height="(\d+)"/.exec(svg);
+process.stdout.write(`wrote ${OUT}${size ? ` (${size[1]}x${size[2]})` : ''}\n`);
 if (missing.length) {
   process.stderr.write(
     `warning: no glyph for: ${missing.map((c) => JSON.stringify(c)).join(', ')}\n`

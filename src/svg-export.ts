@@ -53,6 +53,16 @@ export type SvgExportOptions = {
    * by their inked width plus a kerning gap, matching the non-mono .otf build.
    */
   monospace?: boolean;
+  /**
+   * Paint a rect of this colour behind the text, covering the whole viewBox.
+   * Default: no background, so the SVG stays transparent.
+   */
+  background?: string;
+  /**
+   * Scale the rendered size to this pixel width. The viewBox is unchanged, so
+   * this only affects how large the SVG draws by default.
+   */
+  width?: number;
 };
 
 export type SvgExportResult = {
@@ -197,6 +207,12 @@ export function renderTextToSVG(
     viewH = 2 * padding;
   }
 
+  // The canvas fits the ink tightly; `width` scales the drawn size without
+  // touching the viewBox, and `background` fills that same box.
+  const scale = options.width ? options.width / viewW : 1;
+  const renderedW = options.width ? String(Math.round(viewW * scale)) : num(viewW);
+  const renderedH = options.width ? String(Math.round(viewH * scale)) : num(viewH);
+
   const body: string[] = [];
   if (strokeRuns.length) {
     body.push(`    <path d="${strokeRuns.join(' ')}" />`);
@@ -209,11 +225,15 @@ export function renderTextToSVG(
     );
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${num(
-    viewW
-  )}" height="${num(viewH)}" viewBox="${num(viewX)} ${num(viewY)} ${num(
-    viewW
-  )} ${num(viewH)}">
+  const backgroundRect = options.background
+    ? `\n  <rect x="${num(viewX)}" y="${num(viewY)}" width="${num(
+        viewW
+      )}" height="${num(viewH)}" fill="${options.background}" />`
+    : '';
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${renderedW}" height="${renderedH}" viewBox="${num(
+    viewX
+  )} ${num(viewY)} ${num(viewW)} ${num(viewH)}">${backgroundRect}
   <g fill="none" stroke="${color}" stroke-width="${num(
     strokeWidth
   )}" stroke-linecap="round" stroke-linejoin="round">
