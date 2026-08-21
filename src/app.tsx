@@ -14,6 +14,7 @@ import { Key } from './components/key';
 import { AppSidebar } from './components/app-sidebar';
 import { AppMenubar } from './components/app-menubar';
 import { DEFAULT_FONT_CONFIG, fontConfigReducer } from './font-config';
+import { formatIssue, validateFontSource } from './font-validate';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 
 import { SEGMENTS } from './types';
@@ -92,55 +93,24 @@ function includes(arr: CharLayer, el: number[]) {
   });
 }
 
-function validateCharFontDefinition(fontDefinition: FontDefinition) {
-  try {
-    if (!Object.keys(fontDefinition).length) {
-      alert(`No characters found on this file`);
-      return false;
+// Validation itself lives in ./font-validate so the CLI shares it. Here we only
+// turn a failed result into a throw the import handler can report.
+const MAX_REPORTED_ISSUES = 8;
+
+function parseFont(json: unknown): { config: FontConfig; chars: FontDefinition } {
+  const { ok, config, chars, errors } = validateFontSource(json);
+
+  if (!ok) {
+    const reported = errors.slice(0, MAX_REPORTED_ISSUES).map((issue) => {
+      return formatIssue(issue);
+    });
+    if (errors.length > reported.length) {
+      reported.push(`…and ${errors.length - reported.length} more`);
     }
-
-    for (const char of Object.keys(fontDefinition)) {
-      if (char.length > 1) {
-        throw new Error(`Found invalid char "${char}"`);
-      }
-      for (const layer of fontDefinition[char]) {
-        for (const coord of layer) {
-          if (
-            coord.length !== 2 ||
-            typeof coord[0] !== 'number' ||
-            typeof coord[1] !== 'number'
-          ) {
-            alert(`Invalid char definition found in "${char}"`);
-            return false;
-          }
-        }
-      }
-    }
-
-    return true;
-  } catch (e) {
-    throw new Error(`Invalid font file.`);
-  }
-}
-
-function parseFont(json: any): { config: FontConfig; chars: FontDefinition } {
-  const newConfig: FontConfig = { ...DEFAULT_FONT_CONFIG };
-
-  newConfig.name = String(json.config.name);
-  newConfig.monospace = Boolean(json.config.monospace);
-
-  const newWeight = Number(json.config.weight);
-  if (newWeight === 300 || newWeight === 400 || newWeight === 700) {
-    newConfig.weight = newWeight;
+    throw new Error(reported.join('\n'));
   }
 
-  if (json.config.designer) newConfig.designer = String(json.config.designer);
-  if (json.config.designerURL)
-    newConfig.designerURL = String(json.config.designerURL);
-
-  validateCharFontDefinition(json.chars);
-
-  return { config: newConfig, chars: json.chars };
+  return { config, chars };
 }
 
 // ensures there is always a trailing empty layer so the editor shows an
@@ -499,7 +469,10 @@ function App() {
       fontLoadTrackSet(new Date().getTime());
       fontChangeTrackSet(new Date().getTime() + 1);
     } catch (e) {
-      alert(`Unable to load font file.`);
+      // parseFont throws with the specific validation errors; show them rather
+      // than a bare "unable to load".
+      const detail = e instanceof Error && e.message ? `\n\n${e.message}` : '';
+      alert(`Unable to load font file.${detail}`);
     }
   }
 
