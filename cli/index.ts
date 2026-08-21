@@ -1,190 +1,162 @@
-#!/usr/bin/env -S npx tsx
-import { parseArgs } from 'node:util';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { basename, extname } from 'node:path';
+// Entry point for the `brutalita` bin. Run in development with `pnpm cli`;
+// scripts/build-cli.ts bundles this into dist/cli/brutalita.mjs (adding the
+// node shebang) for publishing.
+import { existsSync } from 'node:fs';
+import { extname } from 'node:path';
 
-import { buildFont, fontFileName } from '../src/font-maker';
-import { renderTextToSVG } from '../src/svg-export';
-import { DEFAULT_FONT_CONFIG } from '../src/font-config';
-import type {
-  FontConfig,
-  FontDefinition,
-  FontWeightType,
-} from '../src/types';
+import { version as VERSION } from '../package.json';
 
-const HELP = `brutalita — export a JSON font config to .otf or .svg
+import { parseCommandArgs, UsageError } from './args';
+import type { CommandSpec, ParsedValues } from './args';
+import { GLOBAL_OPTIONS, SourceError } from './context';
+import type { CommandContext } from './context';
+import { renderCommandHelp, renderRootHelp } from './help';
+import { createLogger } from './log';
+import type { LogLevel } from './log';
 
-Usage:
-  brutalita <config.json> -o <output> [options]
+import * as build from './commands/build';
+import * as info from './commands/info';
+import * as init from './commands/init';
+import * as render from './commands/render';
+import * as validate from './commands/validate';
+import * as watch from './commands/watch';
 
-The input is the editor's JSON ({ "config": {...}, "chars": {...} }).
-The format is taken from the --out extension (.otf / .svg) unless --format is given.
+type Command = {
+  spec: CommandSpec;
+  // Each command narrows `values` to the flags it declares.
+  run: (
+    values: never,
+    positionals: string[],
+    ctx: CommandContext
+  ) => number;
+};
 
-Options:
-  -o, --out <file>        Output path. Defaults to a name derived from the config.
-  -f, --format <otf|svg>  Force the output format.
-  -h, --help              Show this help.
+const COMMANDS: Command[] = [build, render, validate, info, init, watch] as Command[];
 
-SVG only:
-  -t, --text <string>     Text to render. "\\n" starts a new line.
-      --text-file <file>  Read the text from a file instead (or pipe via stdin).
-  -p, --padding <n>       Padding around the text in px (default 16).
-  -c, --color <css>       Stroke/dot color (default #fff).
-      --stroke-width <n>  Override the weight-derived stroke width.
+const EXIT_OK = 0;
+const EXIT_USAGE = 1;
+const EXIT_INVALID_SOURCE = 2;
 
-Config overrides:
-  -w, --weight <300|400|700>  Override the font weight.
-      --name <string>         Override the font name (otf).
-      --mono / --no-mono      Force monospace on/off.
-
-Examples:
-  brutalita src/font.json -o Brutalita.otf
-  brutalita src/font.json -o hello.svg -t "Hello\\nWorld" -p 24
-`;
-
-function fail(message: string): never {
-  process.stderr.write(`error: ${message}\n`);
-  process.exit(1);
+function findCommand(name: string): Command | undefined {
+  return COMMANDS.find((command) => command.spec.name === name);
 }
 
-function parseWeight(value: string): FontWeightType {
-  const n = Number(value);
-  if (n === 300 || n === 400 || n === 700) return n;
-  return fail(`--weight must be 300, 400 or 700 (got "${value}")`);
+/**
+ * Pre-0.4 the CLI was a single command: `brutalita font.json -o out.otf`. Keep
+ * that working by inferring the subcommand from the arguments.
+ */
+function inferCommand(argv: string[]): { name: string; argv: string[] } | undefined {
+  const first = argv[0];
+  if (!first || first.startsWith('-') || !existsSync(first)) return undefined;
+
+  const outIndex = argv.findIndex((arg) => arg === '-o' || arg === '--out');
+  const out = outIndex >= 0 ? argv[outIndex + 1] : undefined;
+  const wantsSvg =
+    argv.includes('-t') ||
+    argv.includes('--text') ||
+    argv.includes('--text-file') ||
+    (out !== undefined && extname(out).toLowerCase() === '.svg');
+
+  return { name: wantsSvg ? 'render' : 'build', argv };
 }
 
-function parseNumber(value: string, flag: string): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fail(`${flag} must be a number (got "${value}")`);
-  return n;
+function levelFrom(values: ParsedValues): LogLevel {
+  if (values.quiet === true) return 'quiet';
+  if (values.verbose === true) return 'verbose';
+  return 'normal';
 }
 
-function main() {
-  // `pnpm cli -- <args>` forwards a literal `--` into argv; Node's parseArgs would
-  // treat it as the options terminator (turning later flags into positionals), so
-  // drop a single leading `--`.
-  const argv = process.argv.slice(2);
+function main(argv: string[]): number {
+  // `pnpm cli -- <args>` forwards a literal `--`, which parseArgs would treat as
+  // the options terminator; drop a single leading one.
   const args = argv[0] === '--' ? argv.slice(1) : argv;
 
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: {
-      out: { type: 'string', short: 'o' },
-      format: { type: 'string', short: 'f' },
-      text: { type: 'string', short: 't' },
-      'text-file': { type: 'string' },
-      padding: { type: 'string', short: 'p' },
-      color: { type: 'string', short: 'c' },
-      'stroke-width': { type: 'string' },
-      weight: { type: 'string', short: 'w' },
-      name: { type: 'string' },
-      mono: { type: 'boolean' },
-      'no-mono': { type: 'boolean' },
-      help: { type: 'boolean', short: 'h' },
-    },
-  });
+  const logger = createLogger();
 
-  if (values.help) {
-    process.stdout.write(HELP);
-    return;
-  }
-
-  const input = positionals[0];
-  if (!input) {
-    process.stderr.write(HELP);
-    process.exit(1);
-  }
-
-  // Read + parse the JSON font config.
-  let parsed: { config?: Partial<FontConfig>; chars?: FontDefinition };
-  try {
-    parsed = JSON.parse(readFileSync(input, 'utf8'));
-  } catch (err) {
-    return fail(`could not read JSON from "${input}": ${(err as Error).message}`);
-  }
-  const chars = parsed.chars;
-  if (!chars || typeof chars !== 'object') {
-    return fail(`"${input}" has no "chars" map — expected { config, chars }`);
-  }
-
-  // Build the effective config: file config, then CLI overrides.
-  const config: FontConfig = { ...DEFAULT_FONT_CONFIG, ...parsed.config };
-  if (values.weight) config.weight = parseWeight(values.weight);
-  if (values.name) config.name = values.name;
-  if (values.mono) config.monospace = true;
-  if (values['no-mono']) config.monospace = false;
-
-  // Resolve the output format.
-  const out = values.out;
-  let format = values.format;
-  if (!format && out) {
-    const ext = extname(out).toLowerCase();
-    if (ext === '.otf') format = 'otf';
-    else if (ext === '.svg') format = 'svg';
-  }
-  if (format !== 'otf' && format !== 'svg') {
-    return fail(
-      'could not determine output format — pass --format otf|svg or an --out ending in .otf/.svg'
-    );
-  }
-
-  if (format === 'otf') {
-    const outPath = out ?? fontFileName(config);
-    const font = buildFont(chars, config);
-    const buffer = Buffer.from(font.toArrayBuffer());
-    writeFileSync(outPath, buffer);
+  if (!args.length || args[0] === '--help' || args[0] === '-h') {
     process.stdout.write(
-      `wrote ${outPath} (${buffer.length} bytes, ${Object.keys(chars).length} glyphs)\n`
+      renderRootHelp(
+        COMMANDS.map(({ spec }) => ({ name: spec.name, summary: spec.summary })),
+        GLOBAL_OPTIONS,
+        VERSION
+      )
     );
-    return;
+    return EXIT_OK;
   }
 
-  // format === 'svg'
-  const text = resolveText(values.text, values['text-file']);
-  if (text === undefined) {
-    return fail('SVG export needs text — pass --text, --text-file, or pipe it via stdin');
+  if (args[0] === '--version' || args[0] === '-V') {
+    process.stdout.write(`${VERSION}\n`);
+    return EXIT_OK;
   }
 
-  const { svg, missing } = renderTextToSVG(chars, text, {
-    padding: values.padding ? parseNumber(values.padding, '--padding') : undefined,
-    color: values.color,
-    strokeWidth: values['stroke-width']
-      ? parseNumber(values['stroke-width'], '--stroke-width')
-      : undefined,
-    weight: config.weight,
-  });
-
-  const outPath = out ?? `${basename(input, extname(input))}.svg`;
-  writeFileSync(outPath, svg);
-  process.stdout.write(`wrote ${outPath}\n`);
-  if (missing.length) {
-    process.stderr.write(
-      `warning: no glyph for: ${missing.map((c) => JSON.stringify(c)).join(', ')}\n`
-    );
-  }
-}
-
-// Resolve SVG text from --text (with \n / \t escapes), --text-file, or stdin.
-function resolveText(
-  textFlag: string | undefined,
-  textFile: string | undefined
-): string | undefined {
-  if (textFlag !== undefined) {
-    return textFlag.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-  }
-  if (textFile !== undefined) {
-    return readFileSync(textFile, 'utf8');
-  }
-  if (!process.stdin.isTTY) {
-    try {
-      const piped = readFileSync(0, 'utf8');
-      if (piped.length) return piped.replace(/\n$/, '');
-    } catch {
-      // no stdin available
+  if (args[0] === 'help') {
+    const target = args[1] ? findCommand(args[1]) : undefined;
+    if (args[1] && !target) {
+      logger.error(`unknown command "${args[1]}"`);
+      return EXIT_USAGE;
     }
+    process.stdout.write(
+      target
+        ? renderCommandHelp(target.spec, GLOBAL_OPTIONS)
+        : renderRootHelp(
+            COMMANDS.map(({ spec }) => ({ name: spec.name, summary: spec.summary })),
+            GLOBAL_OPTIONS,
+            VERSION
+          )
+    );
+    return EXIT_OK;
   }
-  return undefined;
+
+  let command = findCommand(args[0]);
+  let rest = args.slice(1);
+
+  if (!command) {
+    const inferred = inferCommand(args);
+    if (!inferred) {
+      logger.error(
+        `unknown command "${args[0]}" — run \`brutalita --help\` for the command list`
+      );
+      return EXIT_USAGE;
+    }
+    command = findCommand(inferred.name);
+    rest = inferred.argv;
+  }
+
+  const parsed = parseCommandArgs(command!.spec, rest);
+
+  if (parsed.values.help === true) {
+    process.stdout.write(renderCommandHelp(command!.spec, GLOBAL_OPTIONS));
+    return EXIT_OK;
+  }
+
+  const ctx: CommandContext = {
+    logger: createLogger({
+      level: levelFrom(parsed.values),
+      ...(parsed.values['no-color'] === true ? { color: false } : {}),
+    }),
+    json: parsed.values.json === true,
+  };
+
+  if (command!.spec.name !== args[0]) {
+    ctx.logger.debug(`inferred \`brutalita ${command!.spec.name}\` from the arguments`);
+  }
+
+  return command!.run(parsed.values as never, parsed.positionals, ctx);
 }
 
-main();
+try {
+  process.exitCode = main(process.argv.slice(2));
+} catch (err) {
+  const logger = createLogger();
+  if (err instanceof UsageError) {
+    logger.error(err.message);
+    logger.info('run `brutalita --help` for usage');
+    process.exitCode = EXIT_USAGE;
+  } else if (err instanceof SourceError) {
+    logger.error(err.message);
+    process.exitCode = EXIT_INVALID_SOURCE;
+  } else {
+    logger.error((err as Error).stack ?? String(err));
+    process.exitCode = EXIT_USAGE;
+  }
+}
