@@ -12,11 +12,14 @@ const WEIGHTS = {
 
 // Human-readable OpenType subfamily name for each weight. opentype.js derives
 // fsSelection from weightClass automatically (>= 600 -> Bold, else Regular).
-const STYLE_NAME_BY_WEIGHT: Record<FontWeightType, string> = {
+export const STYLE_NAME_BY_WEIGHT: Record<FontWeightType, string> = {
   300: 'Light',
   400: 'Regular',
   700: 'Bold',
 };
+
+/** The weights the stroke expansion has hand-tuned widths for. */
+export const SUPPORTED_WEIGHTS = [300, 400, 700] as const satisfies readonly FontWeightType[];
 
 const CHAR_X = 2;
 const CHAR_Y = 4;
@@ -317,8 +320,25 @@ function makeGlyph(char: string, path: polygon[] = [], config: FontConfig) {
   return tmpGlyph;
 }
 
-function fontName(config: FontConfig): string {
+/** Family name as written into the font: "Brutalita" / "Brutalita Mono". */
+export function fontName(config: FontConfig): string {
   return `${config.name} ${config.monospace ? 'Mono' : ''}`.trim();
+}
+
+/** The metrics a build will use, for `brutalita info`. */
+export function fontMetrics(config: FontConfig) {
+  const { weight, monospaceAdvance } = configToMetrics(config);
+  return {
+    unitsPerEm: UNITS_PER_EM,
+    ascender: ASCENDER,
+    descender: DESCENDER,
+    kerning: KERNING,
+    scaleX: SCALE_X,
+    scaleY: SCALE_Y,
+    /** Stroke half-width in grid units. */
+    strokeWeight: weight,
+    monospaceAdvance,
+  };
 }
 
 // Suggested .otf file name for a config, e.g. "Brutalita Custom-Regular.otf".
@@ -326,9 +346,22 @@ export function fontFileName(config: FontConfig): string {
   return `${fontName(config)}-${STYLE_NAME_BY_WEIGHT[config.weight]}.otf`;
 }
 
+export type BuildFontOptions = {
+  /**
+   * Unix seconds written to head.created. opentype.js defaults it to "now";
+   * pinning it is half of a reproducible build (see src/otf-deterministic.ts,
+   * which also pins head.modified).
+   */
+  createdTimestamp?: number;
+};
+
 // Build the opentype.js Font. Pure and Node-safe (no DOM), so the CLI can import
 // it directly. `font.toArrayBuffer()` serializes it to .otf bytes.
-export function buildFont(definition: FontDefinition, config: FontConfig) {
+export function buildFont(
+  definition: FontDefinition,
+  config: FontConfig,
+  options: BuildFontOptions = {}
+) {
   const { monospaceAdvance } = configToMetrics(config);
 
   const notdefGlyph = new Opentype.Glyph({
@@ -358,6 +391,9 @@ export function buildFont(definition: FontDefinition, config: FontConfig) {
     weightClass: config.weight as unknown as string,
     designer: config.designer?.trim() || undefined,
     designerURL: config.designerURL?.trim() || undefined,
+    ...(options.createdTimestamp !== undefined
+      ? { createdTimestamp: options.createdTimestamp }
+      : {}),
     glyphs: glyphs,
   });
 }
