@@ -12,21 +12,23 @@ import { compress } from 'woff2-encoder';
 import { SHIPPED_WEIGHTS, styleName } from '../src/weights';
 
 const DIR = 'public/font';
-const FAMILY = 'Brutalita';
+const FAMILIES = ['Brutalita', 'Brutalita Mono'];
 
 // Wrapped in a function because these scripts run through tsx as CJS, where
 // top-level await is unavailable.
 async function main() {
   // Driven off the shipped weights rather than a glob, so a missing build fails
   // here instead of silently shipping a weight short.
-  for (const weight of SHIPPED_WEIGHTS) {
-    const base = `${DIR}/${FAMILY}-${styleName({ weight })}`;
-    const otf = readFileSync(`${base}.otf`);
-    const woff2 = await compress(otf);
-    writeFileSync(`${base}.woff2`, woff2);
-    process.stdout.write(
-      `wrote ${base}.woff2 (${otf.length} -> ${woff2.length} bytes)\n`
-    );
+  for (const family of FAMILIES) {
+    for (const weight of SHIPPED_WEIGHTS) {
+      const base = `${DIR}/${family}-${styleName({ weight })}`;
+      const otf = readFileSync(`${base}.otf`);
+      const woff2 = await compress(otf);
+      writeFileSync(`${base}.woff2`, woff2);
+      process.stdout.write(
+        `wrote ${base}.woff2 (${otf.length} -> ${woff2.length} bytes)\n`
+      );
+    }
   }
 }
 

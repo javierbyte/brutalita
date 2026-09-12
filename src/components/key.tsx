@@ -1,10 +1,13 @@
 import { memo } from 'react';
 
+import { MARK_ROWS } from '../compose';
 import { SEGMENTS } from '../types';
 import type { CharLayers } from '../types';
 
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_STROKE_WIDTH = 2;
+/** Where the cap-height row sits inside the cell, in .key CSS. */
+const CELL_TOP_MARGIN = 12;
 
 export const Key = memo(function Key({
   char,
@@ -25,19 +28,31 @@ export const Key = memo(function Key({
   const HEIGHT = 1 * fontSize;
   const STROKEWIDTH = strokeWidth;
   const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
+  // Room above the cap line for the accent of a composed glyph ("Á"). The cell
+  // grows upwards and its top margin shrinks by the same amount, so the
+  // baseline stays where it was and lines keep their spacing.
+  const MARK_BAND = Math.ceil((HEIGHT / SEGMENTS[1]) * MARK_ROWS);
 
   const finalPath = path;
 
   const styles = custom
     ? {
         width: WIDTH + STROKEWIDTH,
-        height: HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT,
+        height: HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT + MARK_BAND,
         marginBottom: -LOW_STEM_HEIGHT,
         marginRight: 4,
-        marginTop: 12,
+        marginTop: CELL_TOP_MARGIN - MARK_BAND,
         color,
       }
-    : {};
+    : {
+        // Keep the enlarged 14px mono cell and skeleton fixed across weights.
+        width: WIDTH + STROKEWIDTH,
+        height: HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT + MARK_BAND,
+        marginRight: 14 - WIDTH - STROKEWIDTH,
+        marginTop: CELL_TOP_MARGIN - MARK_BAND,
+        marginBottom: -LOW_STEM_HEIGHT - (STROKEWIDTH - DEFAULT_STROKE_WIDTH),
+        overflow: 'visible' as const,
+      };
 
   if (!finalPath) {
     return <div className="unknown-char key">{char}</div>;
@@ -63,9 +78,9 @@ export const Key = memo(function Key({
   return (
     <svg
       className="key"
-      viewBox={`${STROKEWIDTH / -2} ${STROKEWIDTH / -2} ${
+      viewBox={`${STROKEWIDTH / -2} ${-MARK_BAND - STROKEWIDTH / 2} ${
         WIDTH + STROKEWIDTH
-      } ${HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT}`}
+      } ${HEIGHT + STROKEWIDTH + LOW_STEM_HEIGHT + MARK_BAND}`}
       width={styles ? styles.width : undefined}
       height={styles ? styles.height : undefined}
       style={styles}

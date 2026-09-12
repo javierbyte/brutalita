@@ -1,6 +1,13 @@
+import {
+  KERNING,
+  SCALE_X,
+  fontKerning,
+  monospaceAdvance as monospaceAdvanceUnits,
+} from './font-maker';
+import { kerningMap, pairKey } from './kerning';
 import { SEGMENTS } from './types';
 import type { FontDefinition, FontWeightType } from './types';
-import { editorStrokeWidth, strokeFraction } from './weights';
+import { editorStrokeWidth } from './weights';
 
 // Render brutalita text to a single, self-contained SVG of single-line strokes —
 // the same look as the editor preview (src/components/key.tsx + .key/.type in
@@ -17,13 +24,10 @@ const HEIGHT = 1 * EDITOR_FONT_SIZE;
 const ADVANCE = 14;
 const LINE_HEIGHT = 30;
 
-// Horizontal metrics from the .otf build (src/font-maker.ts), reused for the
-// proportional (non-mono) layout. In this editor space one glyph cell (SCALE_X
-// font units) spans WIDTH px, so FONT_UNITS_PER_PX converts those .otf metrics
-// to px. Keep these in sync with font-maker if its metrics change.
-const UNITS_PER_EM = 2048;
-const SCALE_X = 640;
-const KERNING = 256;
+// Horizontal metrics come from the .otf build itself (src/font-maker.ts) and
+// are reused for the proportional (non-mono) layout. In this editor space one
+// glyph cell (SCALE_X font units) spans WIDTH px, so FONT_UNITS_PER_PX converts
+// those .otf metrics to px.
 const FONT_UNITS_PER_PX = SCALE_X / WIDTH; // 640 / 8 = 80
 const KERN_PX = KERNING / FONT_UNITS_PER_PX; // 3.2px gap between proportional glyphs
 
@@ -34,9 +38,11 @@ export type SvgExportOptions = {
   strokeWidth?: number;
   /** Used to derive the default stroke width when `strokeWidth` is omitted. */
   weight?: FontWeightType;
+  /** Font aspect ratio used by the shared optical kerning calculation. */
+  height?: number;
   /**
    * Fixed pitch (default) or proportional spacing. When `false`, glyphs advance
-   * by their inked width plus a kerning gap, matching the non-mono .otf build.
+   * by ink width plus the spacing gap, with half the gap on either side.
    */
   monospace?: boolean;
   /**
@@ -77,6 +83,7 @@ export function renderTextToSVG(
   const padding = options.padding ?? 16;
   const color = options.color ?? '#fff';
   const weight = options.weight ?? 400;
+  const height = options.height ?? 2;
   const monospace = options.monospace ?? true;
   const strokeWidth = options.strokeWidth ?? editorStrokeWidth(weight);
   const dotRadius = strokeWidth * 0.75;
@@ -85,16 +92,13 @@ export function renderTextToSVG(
   // and so proportional side bearings sit beside the visible ink, not the path.
   const inkPad = Math.max(strokeWidth / 2, dotRadius);
 
-  // Proportional layout (mono === false): each glyph advances by its inked width
-  // plus a kerning gap, with half the gap as the left side bearing, and the space
-  // glyph is 0.8 × the monospace advance — all mirroring src/font-maker.ts.
-  const monoAdvancePx =
-    (UNITS_PER_EM -
-      SCALE_X -
-      KERNING +
-      (strokeFraction(weight) / 4) * UNITS_PER_EM) /
-    FONT_UNITS_PER_PX;
+  // Proportional spacing follows ink bounds without screen-pixel quantization.
+  // Keep the measured stroke/dot radii so SVG spacing matches the font.
+  const monoAdvancePx = monospaceAdvanceUnits(weight) / FONT_UNITS_PER_PX;
   const spaceAdvance = monoAdvancePx * 0.8;
+  const kern = monospace
+    ? new Map<string, number>()
+    : kerningMap(fontKerning(definition, { weight, height, monospace }));
 
   // Strokes (>=2 points) become path subpaths; single-point layers become dots.
   const strokeRuns: string[] = [];
@@ -117,6 +121,7 @@ export function renderTextToSVG(
   lines.forEach((line, lineIdx) => {
     const originY = lineIdx * LINE_HEIGHT;
     let penX = 0; // running x origin for proportional layout
+    let previous = '';
 
     [...line].forEach((char, colIdx) => {
       const layers = definition[char];
@@ -131,8 +136,9 @@ export function renderTextToSVG(
           if (!layer.length) continue;
           const pts = layer.map(([x, y]): [number, number] => {
             const px = mapX(x);
-            if (px < glyphMinX) glyphMinX = px;
-            if (px > glyphMaxX) glyphMaxX = px;
+            const radius = layer.length === 1 ? dotRadius : strokeWidth / 2;
+            glyphMinX = Math.min(glyphMinX, px - radius);
+            glyphMaxX = Math.max(glyphMaxX, px + radius);
             return [px, mapY(y)];
           });
           localLayers.push(pts);
@@ -148,12 +154,15 @@ export function renderTextToSVG(
       if (monospace) {
         originX = colIdx * ADVANCE;
       } else if (Number.isFinite(glyphMinX)) {
-        originX = penX + KERN_PX / 2 - (glyphMinX - inkPad);
-        penX += glyphMaxX - glyphMinX + 2 * inkPad + KERN_PX;
+        penX += (kern.get(pairKey(previous, char)) ?? 0) / FONT_UNITS_PER_PX;
+        originX = penX + KERN_PX / 2 - glyphMinX;
+        penX += glyphMaxX - glyphMinX + KERN_PX;
       } else {
         penX += spaceAdvance;
+        previous = char;
         return;
       }
+      previous = char;
 
       for (const pts of localLayers) {
         const points = pts.map(([px, py]): [number, number] => {

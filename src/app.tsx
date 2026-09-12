@@ -13,6 +13,7 @@ import FONT_DEFINITION_SRC from './font.json';
 import { Key } from './components/key';
 import { AppSidebar } from './components/app-sidebar';
 import { AppMenubar } from './components/app-menubar';
+import { MARK_ROWS } from './compose';
 import { DEFAULT_FONT_CONFIG, fontConfigReducer } from './font-config';
 import { formatIssue, validateFontSource } from './font-validate';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
@@ -141,12 +142,16 @@ function Editor({
 
   const EDITOR_CONTROLS_HEIGHT = 24;
 
+  // The grid starts above the cap row: accents live in the mark band, so the
+  // rows a composed glyph like "Á" uses have to be drawable too.
+  const gridTop = MARK_ROWS * EDITOR_GAP;
+
   const style = {
     marginTop: EDITOR_DOT_SIZE / 2,
     marginLeft: EDITOR_DOT_SIZE / 2,
     marginRight: EDITOR_DOT_SIZE / 2,
     marginBottom: EDITOR_DOT_SIZE / 2 + EDITOR_CONTROLS_HEIGHT,
-    height: (DOTSY + (EDITOR_ADVANCE ? 1 : 0)) * EDITOR_GAP,
+    height: gridTop + (DOTSY + (EDITOR_ADVANCE ? 1 : 0)) * EDITOR_GAP,
     width: DOTSX * EDITOR_GAP,
   };
 
@@ -170,7 +175,7 @@ function Editor({
                 width: EDITOR_DOT_SIZE,
                 backgroundColor: includes(value, [x, y]) ? '#fff' : '#808080',
                 left: x * EDITOR_GAP,
-                top: y * EDITOR_GAP,
+                top: gridTop + y * EDITOR_GAP,
               }}
               className="editor-dot"
             />
@@ -180,20 +185,17 @@ function Editor({
 
       {EDITOR_ADVANCE &&
         new Array(DOTSX * 2 + 3).fill('').map((_1, x) => {
-          return new Array(DOTSY * 2 + 4).fill('').map((_1, y) => {
+          return new Array((DOTSY + 1 + MARK_ROWS) * 2 + 1).fill('').map((_1, y) => {
             const x1 = x / 2 - 0.5;
-            const y1 = y / 2 - 0.5;
+            const y1 = y / 2 - MARK_ROWS;
 
-            // do not ovrelap with bigger dots
+            // do not ovrelap with bigger dots, which only cover the cap box
             if (x1 === Math.round(x1) && y1 === Math.round(y1)) {
-              if (y1 !== DOTSY + 1) {
+              if (y1 >= 0 && y1 <= DOTSY) {
                 return null;
               }
             }
             if (x1 === -0.5) {
-              return null;
-            }
-            if (y1 === -0.5) {
               return null;
             }
             if (x1 === DOTSX + 0.5) {
@@ -218,7 +220,7 @@ function Editor({
                     ? '#fff'
                     : '#808080',
                   left: x1 * EDITOR_GAP,
-                  top: y1 * EDITOR_GAP,
+                  top: gridTop + y1 * EDITOR_GAP,
                 }}
                 className="editor-dot"
               />
@@ -227,12 +229,12 @@ function Editor({
         })}
 
       <svg
-        viewBox={`-1 -1 ${DOTSX + 2} ${DOTSY + 2}`}
+        viewBox={`-1 ${-1 - MARK_ROWS} ${DOTSX + 2} ${DOTSY + 2 + MARK_ROWS}`}
         style={{
           position: 'absolute',
           top: -EDITOR_GAP,
           left: -EDITOR_GAP,
-          height: (DOTSY + 2) * EDITOR_GAP,
+          height: (DOTSY + 2 + MARK_ROWS) * EDITOR_GAP,
           width: (DOTSX + 2) * EDITOR_GAP,
         }}
       >

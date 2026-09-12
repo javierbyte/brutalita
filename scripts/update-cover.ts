@@ -8,8 +8,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { fontDisplayName } from '../src/font-maker';
+import { formatIssue, validateFontSource } from '../src/font-validate';
 import { renderTextToSVG } from '../src/svg-export';
-import type { FontDefinition, FontWeightType } from '../src/types';
 
 const FONT_JSON = 'src/font.json';
 const OUT = 'public/brutalita-cover.svg';
@@ -19,10 +19,17 @@ const STROKE = '#fff';
 const PADDING = 72;
 const TARGET_WIDTH = 800; // match the previous cover's width
 
-const { config, chars } = JSON.parse(readFileSync(FONT_JSON, 'utf8')) as {
-  config: { name: string; version?: string; weight: FontWeightType; monospace: boolean };
-  chars: FontDefinition;
-};
+// Through the validator, not JSON.parse: composed glyphs such as "Á" are only
+// layers once it has resolved them.
+const { ok, config, chars, errors } = validateFontSource(
+  JSON.parse(readFileSync(FONT_JSON, 'utf8'))
+);
+if (!ok) {
+  for (const issue of errors) {
+    process.stderr.write(`${formatIssue(issue, FONT_JSON)}\n`);
+  }
+  process.exit(1);
+}
 
 // The heading is filled from the font config so the banner tracks the version.
 const text = [
@@ -31,6 +38,7 @@ const text = [
   'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQ',
   'qRrSsTtUuVvWwXxYyZz0123456789!"#$',
   "%&'()*+,-./:;<=>?@[\\]^_`{|}~´",
+  'ÁáÉéÍíÓóÚúÑñÜüı¡¿',
   '',
   '',
   'Brutalita is an experimental font and editor.',
@@ -39,6 +47,7 @@ const text = [
 
 const { svg, missing } = renderTextToSVG(chars, text, {
   weight: config.weight,
+  height: config.height,
   monospace: config.monospace, // src/font.json is proportional (monospace: false)
   color: STROKE,
   padding: PADDING,

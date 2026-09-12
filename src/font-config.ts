@@ -7,7 +7,7 @@ import { parseWeight } from './weights';
 export const DEFAULT_FONT_CONFIG: FontConfig = {
   name: 'Brutalita Custom',
   weight: 400,
-  height: 1.888,
+  height: 2,
   monospace: true,
   designer: 'javierbyte',
   designerURL: 'https://javier.xyz',

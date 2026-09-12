@@ -10,11 +10,11 @@ import { renderTextToSVG } from '../src/svg-export';
 const { config, chars } = validateFontSource(source);
 
 test('renders strokes and reports missing glyphs', () => {
-  const { svg, missing } = renderTextToSVG(chars, 'Hi é', { weight: config.weight });
+  const { svg, missing } = renderTextToSVG(chars, 'Hi €', { weight: config.weight });
   assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   assert.match(svg, /<path d="M /);
   assert.match(svg, /stroke-width="2"/);
-  assert.deepEqual(missing, ['é']);
+  assert.deepEqual(missing, ['€']);
 });
 
 test('background paints a rect over the whole viewBox', () => {
@@ -56,6 +56,7 @@ test('reproduces public/brutalita-cover.svg', () => {
     'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQ',
     'qRrSsTtUuVvWwXxYyZz0123456789!"#$',
     "%&'()*+,-./:;<=>?@[\\]^_`{|}~´",
+    'ÁáÉéÍíÓóÚúÑñÜüı¡¿',
     '',
     '',
     'Brutalita is an experimental font and editor.',

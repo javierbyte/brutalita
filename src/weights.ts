@@ -10,51 +10,42 @@ export const MIN_WEIGHT = 1;
 export const MAX_WEIGHT = 1000;
 
 /**
- * The hand-tuned thickness anchors, ascending. Weights between two stops
- * interpolate; weights outside the range draw at the nearest stop's thickness
- * (a 100 looks like a Light but still writes usWeightClass 100). Widening the
- * range is one more entry here.
+ * The original SVG stroke widths are the design reference: Light 1.5px,
+ * Regular 2px, Bold 2.5px on an 8×16px skeleton. Additional weights extend
+ * that range without changing these anchors. Both exporters use this table.
  */
 const STOPS = [
-  { weight: 300, stroke: 0.15, editorStroke: 1.5 },
-  { weight: 400, stroke: 0.25, editorStroke: 2 },
-  { weight: 700, stroke: 0.3, editorStroke: 2.5 },
+  { weight: 100, editorStroke: 0.5 },
+  { weight: 200, editorStroke: 1 },
+  { weight: 300, editorStroke: 1.5 },
+  { weight: 400, editorStroke: 2 },
+  { weight: 700, editorStroke: 2.5 },
+  { weight: 800, editorStroke: 2.65 },
+  { weight: 900, editorStroke: 2.8 },
 ] as const;
 
-type StopKey = 'stroke' | 'editorStroke';
-
-// Written as a * (1 - t) + b * t rather than a + (b - a) * t so that landing
-// exactly on a stop returns that stop's value bit-for-bit — the committed .otf
-// files and brutalita-cover.svg are compared byte for byte in the tests.
-function interpolate(weight: number, key: StopKey): number {
+/** Stroke width in pixels of the original 8×16 SVG design. */
+export function editorStrokeWidth(weight: FontWeightType): number {
   const first = STOPS[0];
   const last = STOPS[STOPS.length - 1];
-  if (weight <= first.weight) return first[key];
-  if (weight >= last.weight) return last[key];
+  if (weight <= first.weight) return first.editorStroke;
+  if (weight >= last.weight) return last.editorStroke;
 
   for (let i = 1; i < STOPS.length; i++) {
     const a = STOPS[i - 1];
     const b = STOPS[i];
     if (weight > b.weight) continue;
-
     const t = (weight - a.weight) / (b.weight - a.weight);
-    return a[key] * (1 - t) + b[key] * t;
+    return a.editorStroke * (1 - t) + b.editorStroke * t;
   }
-
-  return last[key];
+  return last.editorStroke;
 }
 
-/** Stroke half-width in grid units, for the .otf outline expansion. */
+/** Stroke width relative to the 8px-wide SVG skeleton. */
 export function strokeFraction(weight: FontWeightType): number {
-  return interpolate(weight, 'stroke');
+  return editorStrokeWidth(weight) / 8;
 }
 
-/** Stroke width in px, for the editor preview and the .svg export. */
-export function editorStrokeWidth(weight: FontWeightType): number {
-  return interpolate(weight, 'editorStroke');
-}
-
-/** The OpenType subfamily names, for the weights that have one. */
 const STANDARD_STYLE_NAMES: Record<number, string> = {
   100: 'Thin',
   200: 'ExtraLight',
@@ -98,4 +89,6 @@ export function parseWeight(value: unknown): FontWeightType | null {
  * `brutalita build --weight all` expands to. Any other weight still builds —
  * this list is what ships, not what is allowed.
  */
-export const SHIPPED_WEIGHTS: FontWeightType[] = [300, 400, 500, 700];
+export const SHIPPED_WEIGHTS: FontWeightType[] = [
+  100, 200, 300, 400, 500, 600, 700, 800, 900,
+];

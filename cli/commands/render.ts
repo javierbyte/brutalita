@@ -153,6 +153,7 @@ export function run(
       ? asPositive(values['stroke-width'], '--stroke-width')
       : undefined,
     weight,
+    height: config.height,
     // The old CLI dropped this, so proportional fonts still rendered monospaced.
     monospace: config.monospace,
   });

@@ -8,6 +8,7 @@ import {
   buildFont,
   fontDisplayName,
   fontFileName,
+  stemWidth,
 } from '../src/font-maker';
 import { validateFontSource } from '../src/font-validate';
 import source from '../src/font.json';
@@ -89,6 +90,7 @@ test('a font source predating config.version still validates and builds', () => 
       designer: 'javierbyte',
       designerURL: 'https://javier.xyz',
     },
+    marks: source.marks,
     chars: source.chars,
   };
 
@@ -117,7 +119,7 @@ test('filenames and display names survive a missing version', () => {
   const legacy = { ...config, version: undefined };
   assert.equal(fontFileName(legacy), 'Brutalita-Regular.otf');
   assert.equal(fontDisplayName(legacy), 'Brutalita');
-  assert.equal(fontDisplayName(config), 'Brutalita v0.8');
+  assert.equal(fontDisplayName(config), 'Brutalita v0.9');
 });
 
 test('the same source and timestamp produce identical bytes', () => {
@@ -202,7 +204,90 @@ test('renderFilename expands every token', () => {
 });
 
 test('slugify produces a filesystem-safe name', () => {
-  assert.equal(slugify('Brutalita v0.8'), 'brutalita-v0-8');
+  assert.equal(slugify('Brutalita v0.9'), 'brutalita-v0-9');
   assert.equal(slugify('Bórquez  Mono'), 'borquez-mono');
   assert.equal(slugify('!!!'), 'font');
+});
+
+// Integral font coordinates ensure predictable serialization; they do not
+// guarantee pixel sharpness, which also depends on size and rasterization.
+for (const weight of SHIPPED_WEIGHTS) {
+  const style = styleName({ weight });
+
+  test(`${style} outlines are on whole font units`, () => {
+    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    for (let i = 0; i < font.glyphs.length; i++) {
+      const glyph = font.glyphs.get(i);
+      assert.ok(
+        Number.isInteger(glyph.advanceWidth),
+        `${glyph.name} has a fractional advance (${glyph.advanceWidth})`
+      );
+      for (const command of glyph.path.commands) {
+        const point = command as unknown as { x?: number; y?: number };
+        if (point.x === undefined) continue;
+        assert.ok(
+          Number.isInteger(point.x) && Number.isInteger(point.y),
+          `${glyph.name} has a fractional point (${point.x}, ${point.y})`
+        );
+      }
+    }
+  });
+
+  // The stroke used to be offset in grid units before an anisotropic scale, so
+  // "monoline" H came out with 160-unit stems and a 151-unit crossbar.
+  test(`${style} draws stems and bars at the same width`, () => {
+    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    const points = font
+      .charToGlyph('H')
+      .path.commands.map((command) => command as unknown as { x?: number; y?: number })
+      .filter((point): point is { x: number; y: number } => point.x !== undefined);
+
+    // The left stem is the only ink in the left third; the crossbar the only
+    // ink between the cap band and the baseline band.
+    const stemXs = points.map((p) => p.x).filter((x) => x < 500);
+    const barYs = points.map((p) => p.y).filter((y) => y > 400 && y < 1000);
+    const stem = Math.max(...stemXs) - Math.min(...stemXs);
+    const bar = Math.max(...barYs) - Math.min(...barYs);
+
+    assert.equal(stem, stemWidth(weight));
+    assert.equal(bar, stem);
+  });
+}
+
+test('the baseline is 0 and the SVG skeleton stays fixed for every weight', () => {
+  for (const weight of SHIPPED_WEIGHTS) {
+    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    const ys = font
+      .charToGlyph('H')
+      .path.commands.map((command) => (command as unknown as { y?: number }).y)
+      .filter((y): y is number => y !== undefined);
+    assert.equal(Math.min(...ys), 0, `${styleName({ weight })} baseline`);
+    assert.equal(Math.max(...ys), 1280 + stemWidth(weight), `${styleName({ weight })} cap height`);
+  }
+});
+
+test('the tables a renderer reads are actually filled in', () => {
+  const font = parse(buildFont(chars, config).toArrayBuffer());
+  const post = font.tables.post as unknown as Record<string, number>;
+  const os2 = font.tables.os2 as unknown as Record<string, number | string>;
+
+  // Both shipped as 0, which makes an underline a zero-thickness rule on the
+  // baseline.
+  assert.equal(post.underlineThickness, stemWidth(config.weight));
+  assert.ok(post.underlinePosition < 0);
+
+  // USE_TYPO_METRICS (bit 7), or Windows and macOS disagree on line height.
+  assert.equal(Number(os2.fsSelection) & 128, 128);
+  assert.notEqual(os2.achVendID, 'XXXX');
+  assert.equal(os2.usWinAscent, font.ascender);
+  assert.equal(os2.usWinDescent, -font.descender);
+
+  // opentype.js writes a single space for every name record it is not given.
+  const names = font.names as unknown as Record<
+    string,
+    Record<string, Record<string, string>>
+  >;
+  for (const [key, value] of Object.entries(names.windows ?? {})) {
+    assert.notEqual(value.en?.trim(), '', `name record ${key} is blank`);
+  }
 });

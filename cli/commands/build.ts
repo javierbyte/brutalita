@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { buildFont, fontName } from '../../src/font-maker';
+import { buildFontBytes, fontName } from '../../src/font-maker';
 import type { FontConfig } from '../../src/types';
 import { styleName } from '../../src/weights';
 
@@ -162,8 +162,11 @@ export function run(
     const config: FontConfig = { ...baseConfig, weight };
     const style = styleName(config);
 
-    const font = buildFont(source.chars, config, { createdTimestamp });
-    let bytes: Buffer = Buffer.from(font.toArrayBuffer());
+    // Hints go in before the timestamps: stamping fixes up head's checksum and
+    // the whole-file checkSumAdjustment, which the CFF rewrite invalidates.
+    let bytes: Buffer = Buffer.from(
+      buildFontBytes(source.chars, config, { createdTimestamp })
+    );
     if (createdTimestamp !== undefined) {
       bytes = stampTimestamps(bytes, createdTimestamp);
     }

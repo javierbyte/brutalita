@@ -2,11 +2,59 @@
   "config": {
     "name": "Brutalita",
     "weight": 400,
-    "height": 1.888,
+    "height": 2,
     "monospace": false,
     "designer": "javierbyte",
     "designerURL": "https://javier.xyz",
-    "version": "0.8"
+    "version": "0.9"
+  },
+  "marks": {
+    "acute": [
+      [
+        [
+          0.5,
+          0
+        ],
+        [
+          1.5,
+          -0.5
+        ]
+      ]
+    ],
+    "tilde": [
+      [
+        [
+          0,
+          0
+        ],
+        [
+          0.5,
+          -0.5
+        ],
+        [
+          1.5,
+          0
+        ],
+        [
+          2,
+          -0.5
+        ]
+      ]
+    ],
+    "diaeresis": [
+      [
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          2,
+          0
+        ]
+      ]
+    ]
   },
   "chars": {
     "0": [
@@ -2838,6 +2886,10 @@
         ]
       ]
     ],
+    "¡": {
+      "base": "!",
+      "rotate": 180
+    },
     "´": [
       [
         [
@@ -2847,6 +2899,90 @@
         [
           1.5,
           0
+        ]
+      ]
+    ],
+    "¿": {
+      "base": "?",
+      "rotate": 180
+    },
+    "Á": {
+      "base": "A",
+      "mark": "acute"
+    },
+    "É": {
+      "base": "E",
+      "mark": "acute"
+    },
+    "Í": {
+      "base": "I",
+      "mark": "acute"
+    },
+    "Ñ": {
+      "base": "N",
+      "mark": "tilde"
+    },
+    "Ó": {
+      "base": "O",
+      "mark": "acute"
+    },
+    "Ú": {
+      "base": "U",
+      "mark": "acute"
+    },
+    "Ü": {
+      "base": "U",
+      "mark": "diaeresis"
+    },
+    "á": {
+      "base": "a",
+      "mark": "acute"
+    },
+    "é": {
+      "base": "e",
+      "mark": "acute"
+    },
+    "í": {
+      "base": "ı",
+      "mark": "acute"
+    },
+    "ñ": {
+      "base": "n",
+      "mark": "tilde"
+    },
+    "ó": {
+      "base": "o",
+      "mark": "acute"
+    },
+    "ú": {
+      "base": "u",
+      "mark": "acute"
+    },
+    "ü": {
+      "base": "u",
+      "mark": "diaeresis"
+    },
+    "ı": [
+      [
+        [
+          0.5,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          0.5,
+          4
+        ],
+        [
+          1.5,
+          4
         ]
       ]
     ]

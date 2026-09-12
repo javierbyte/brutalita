@@ -13,7 +13,7 @@ test('the shipped font validates cleanly', () => {
   assert.equal(result.ok, true, messages(result.errors));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, [], messages(result.warnings));
-  assert.equal(Object.keys(result.chars).length, 96);
+  assert.equal(Object.keys(result.chars).length, 113);
   assert.equal(result.config.weight, 400);
   assert.equal(result.config.monospace, false);
 });

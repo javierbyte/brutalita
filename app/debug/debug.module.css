@@ -1,0 +1,79 @@
+:global(body):has(.page) {
+  height: auto;
+  overflow-y: auto;
+  background: #f4f2eb;
+}
+
+.page {
+  min-height: 100svh;
+  padding: 32px clamp(16px, 4vw, 48px) 64px;
+  background: #f4f2eb;
+  color: #20201e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid #20201e;
+}
+
+.heading {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.meta,
+.size {
+  color: #65655d;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.back {
+  display: inline-block;
+  margin-top: 8px;
+  color: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.back::after {
+  display: none;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+/* Alternating bands make a stepping artifact easy to spot across rows. */
+.row:nth-child(even) {
+  background: #ebe9e1;
+}
+
+.size {
+  flex: none;
+  width: 7ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sample {
+  font-family: var(--font-brutalita), monospace;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.5;
+  white-space: nowrap;
+}
