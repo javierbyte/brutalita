@@ -2,13 +2,18 @@
 
 [![brutalita](https://raw.githubusercontent.com/javierbyte/brutalita/HEAD/public/brutalita-cover.svg)](https://brutalita.com/)
 
-Brutalita is an experimental font and font editor, edit in your browser and download OTF.
+Brutalita is an experimental font and font editor. Draw in your browser, download OTF.
 
-The name means "little brutal" in spanish. Made with SVG and Opentype.JS
+The name means "little brutal" in spanish. Made with SVG and Opentype.JS.
+
+- **[brutalita.com](https://brutalita.com/)** — the editor
+- **[brutalita.com/demo](https://brutalita.com/demo)** — specimens at several sizes
 
 ## Download
 
-These links always point at the latest release.
+Two families, **Brutalita** (proportional) and **Brutalita Mono**, each in nine
+weights, as OTF for desktop and WOFF2 for the web. These links always point at
+the latest release.
 
 | Weight | Desktop | Web |
 | --- | --- | --- |
@@ -22,13 +27,9 @@ These links always point at the latest release.
 | Extra Bold | [Brutalita-ExtraBold.otf](https://brutalita.com/font/Brutalita-ExtraBold.otf) | [Brutalita-ExtraBold.woff2](https://brutalita.com/font/Brutalita-ExtraBold.woff2) |
 | Black | [Brutalita-Black.otf](https://brutalita.com/font/Brutalita-Black.otf) | [Brutalita-Black.woff2](https://brutalita.com/font/Brutalita-Black.woff2) |
 
-Both **Brutalita** (proportional) and **Brutalita Mono** ship in all nine weights as OTF and WOFF2. Mono filenames use `Brutalita Mono-{Style}` (URL-encode the space as `%20`), for example [Mono Regular OTF](https://brutalita.com/font/Brutalita%20Mono-Regular.otf) and [WOFF2](https://brutalita.com/font/Brutalita%20Mono-Regular.woff2). The [web demo](https://brutalita.com/demo) switches all specimens between the two families.
-
-Both families cover printable ASCII plus the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` — and the dotless `ı` the accented `í` is built from. Accents stand a row clear of the letter, in a mark band above the cap line, so a line of accented capitals fits inside its own line box: `line-height: normal` is 1.24em.
-
-The original design scale is preserved: at **16px**, Regular has a **1.25px stroke** and **11.25px cap height**; the mono advance is **8.75px**. The demo includes **12.8, 19.2, and 25.6px** to compare the SVG-derived scales without changing the font outlines. CFF hints assist supported rasterizers, but crispness depends on display density, placement, and browser rendering. These fonts do not match Courier's layout metrics.
-
-The demo's **Debug: Brutalita horizontal offset** control compares fractional CSS-pixel placement without changing font size, outlines, or advances. It defaults to off. A local Chromium canvas comparison at 1× and 2× found that the clearest offset varied by size and density; hinted/unhinted output was generally similar, and small baseline nudges did not consistently help. These are renderer-specific observations, not a universal sharpness setting.
+Mono files are named `Brutalita Mono-{Style}`, with the space URL-encoded:
+[Mono Regular OTF](https://brutalita.com/font/Brutalita%20Mono-Regular.otf),
+[WOFF2](https://brutalita.com/font/Brutalita%20Mono-Regular.woff2).
 
 ```css
 @font-face {
@@ -38,15 +39,25 @@ The demo's **Debug: Brutalita horizontal offset** control compares fractional CS
 }
 ```
 
+Both families cover printable ASCII plus the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡`.
+Accents sit in their own band above the cap line, so a line of accented capitals
+still fits its line box; `line-height: normal` is 1.24em.
+
 ## CLI
 
-Compile a font source to `.otf` without opening the editor. The source is the
-same JSON the editor exports — `{ "config": {...}, "marks": {...}, "chars": {...} }` —
-where each glyph is a list of polylines on a 2×4 half-step grid.
+Compile a font source to `.otf` without opening the editor.
 
-A glyph can also be built from another instead of drawn. `marks` holds accents
-drawn once, foot on `y = 0`; a composite places one on a letter, or turns the
-letter around:
+```sh
+pnpm dlx brutalita build my-font.json -o MyFont.otf
+```
+
+The source is the same JSON the editor exports — `{ "config": {...}, "marks": {...},
+"chars": {...} }` — where each glyph is a list of polylines on a 2×4 half-step grid.
+With no source argument the CLI looks for `./font.json`, then `./src/font.json`, then
+falls back to the copy of Brutalita it bundles.
+
+A glyph can also be built from another instead of drawn, either by taking an
+accent from `marks` or by turning the letter around:
 
 ```json
 "marks": { "acute": [[[0.5, 0], [1.5, -0.5]]] },
@@ -55,17 +66,6 @@ letter around:
   "¿": { "base": "?", "rotate": 180 }
 }
 ```
-
-The mark is centred on the base's ink and lifted a row clear of its topmost
-stroke, so the same acute lands on the cap line over an "a" and a row higher
-over an "A".
-
-```sh
-pnpm dlx brutalita build my-font.json -o MyFont.otf
-```
-
-With no source argument it looks for `./font.json`, then `./src/font.json`, then
-falls back to the copy of Brutalita bundled with the CLI.
 
 ### Commands
 
@@ -81,7 +81,7 @@ falls back to the copy of Brutalita bundled with the CLI.
 Run `brutalita help <command>` for the full option list.
 
 ```sh
-# all nine standard weights above, into a directory
+# all nine standard weights, into a directory
 brutalita build src/font.json -d public/font -w all
 
 # any weight from 1 to 1000 builds, named after itself when it has no
@@ -108,38 +108,19 @@ Exit codes: `0` success, `1` usage or I/O error, `2` invalid font source.
 pnpm dev         # the editor at localhost:3000
 pnpm cli         # run the CLI from source
 pnpm assets      # regenerate every committed artifact (fonts + banner)
-pnpm fonts       # just public/font/Brutalita-*.{otf,woff2}
-pnpm cover       # just the banner above
 pnpm test        # unit tests + golden font/SVG regression tests
 pnpm typecheck
 pnpm build:cli   # bundle the CLI to dist/cli/brutalita.mjs
 ```
 
-The generated files are committed: the `.otf` files are the golden reference for the
-build tests, and GitHub serves the banner above straight from the repo. `pnpm assets`
-rebuilds them byte-for-byte, so a clean `git status` afterwards means they are current.
+The built fonts and the banner are committed: the `.otf` files are the golden
+reference for the build tests, and GitHub serves the banner above straight from
+the repo. `pnpm assets` rebuilds them byte-for-byte, so a clean `git status`
+afterwards means they are current.
 
-To release a new version of the typeface, bump `config.version` in `src/font.json` and
-the `--timestamp` in `fonts:otf`, then run `pnpm assets`.
+To release a new version of the typeface, bump `config.version` in `src/font.json`
+and the `--timestamp` in `fonts:otf`, then run `pnpm assets`.
 
-Stroke thickness is interpolated between the anchors in `src/weights.ts`, which is
-the only place a weight is described. `SHIPPED_WEIGHTS` there lists the weights the
-site publishes and the editor offers; `--weight all` expands to it.
+## License
 
-The CLI bundles to a single dependency-free file, so `dist/cli/brutalita.mjs` is
-the only thing published. The font-building core (`src/font-maker.ts`,
-`src/cff-hint.ts`, `src/svg-export.ts`, `src/font-validate.ts`) is shared with the
-browser editor and stays free of DOM access.
-
-The original SVG is the outline reference: an 8×16px skeleton with 1.5px Light,
-2px Regular, and 2.5px Bold strokes. The font uses those same proportions,
-round caps, joins, and oversized dots. Its grid stays fixed across weights;
-the shipped source uses `height: 2` to match the SVG aspect ratio. Existing
-sources with a different height still use their configured aspect ratio.
-
-Nine weights span 40–224 font units. Strokes round to the nearest two font
-units for serialization, rather than a screen-pixel ladder. The CFF hints
-describe the resulting outlines without changing the design. Actual pixel
-rendering still depends on size and renderer. At 25.6px font size, the 2048-upem
-font has the same scale as the original 16px SVG skeleton; compare at equal
-visible scale rather than assuming the two size numbers mean the same thing.
+BSD 3-Clause. © Javier Bórquez.
