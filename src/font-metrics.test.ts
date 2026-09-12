@@ -51,6 +51,39 @@ test('Regular preserves the original design scale and natural spacing', () => {
   }
 });
 
+test('monospace stems start on the 160-unit design lattice', () => {
+  // Grid positions step by 160 units — half a grid column — and every stem is
+  // drawn on one. Starting the ink there puts the left edge of each vertical
+  // stem on a whole device pixel at the sizes where a step is whole, instead of
+  // straddling two and rasterizing with a gray fringe on both sides.
+  for (const weight of SHIPPED_WEIGHTS) {
+    const cfg = { ...config, weight, monospace: true };
+    const metrics = fontMetrics(cfg);
+    assert.equal(metrics.inkOffset, -32);
+    const font = parse(buildFontBytes(chars, cfg));
+    // Letters built from vertical stems. Round caps and dots are exempt: a
+    // circle has no edge for a rasterizer to snap to.
+    for (const char of 'HIEnul') {
+      const xs = font
+        .charToGlyph(char)
+        .path.commands.flatMap(command => ('x' in command ? [command.x] : []));
+      assert.equal(Math.min(...xs) % 160, 0, `${weight} ${char} starts at ${Math.min(...xs)}`);
+    }
+    // Ink stays inside its own advance. The other lattice landing, 128 units to
+    // the right of the nominal bearing, would hang the heavy weights past it.
+    for (let i = 1; i < font.glyphs.length; i++) {
+      const glyph = font.glyphs.get(i);
+      const xs = glyph.path.commands.flatMap(command => ('x' in command ? [command.x] : []));
+      if (!xs.length) continue;
+      assert.ok(Math.min(...xs) >= 0, `${weight} ${glyph.name} starts left of its origin`);
+      assert.ok(
+        Math.max(...xs) <= metrics.monospaceAdvance,
+        `${weight} ${glyph.name} overhangs its advance`
+      );
+    }
+  }
+});
+
 test('both published families contain all weights and round-trip through WOFF2', async () => {
   const metrics = fontMetrics({ ...config, weight: 400 });
   for (const monospace of [false, true]) {

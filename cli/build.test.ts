@@ -119,7 +119,7 @@ test('filenames and display names survive a missing version', () => {
   const legacy = { ...config, version: undefined };
   assert.equal(fontFileName(legacy), 'Brutalita-Regular.otf');
   assert.equal(fontDisplayName(legacy), 'Brutalita');
-  assert.equal(fontDisplayName(config), 'Brutalita v0.9');
+  assert.equal(fontDisplayName(config), 'Brutalita v0.9.1');
 });
 
 test('the same source and timestamp produce identical bytes', () => {

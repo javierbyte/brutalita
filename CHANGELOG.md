@@ -1,3 +1,8 @@
+# 0.9.1 — 2026-09-13
+
+- Added `↕`.
+- Monospace ink sits on the 160-unit design lattice.
+
 # 0.9 — 2026-09-12
 
 - Nine weights, Thin through Black, replacing the four that used to ship.
@@ -7,12 +12,12 @@
 - Stroke widths are re-anchored to the original SVG design: 1.5px Light, 2px
   Regular, 2.5px Bold on the 8×16px skeleton. The three original anchors are
   unchanged; the new weights extend the range around them.
-- Added the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` — and the dotless `ı`.
-  Accents live in a mark band above the cap line, so accented capitals stay
-  inside their own line box.
+- Added the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` — and the dotless `ı`. Accents
+  live in a mark band above the cap line, so accented capitals stay inside their
+  own line box.
 - Glyphs can be composed instead of drawn: `marks` holds an accent once, and a
-  char can be `{ "base": "a", "mark": "acute" }` or `{ "base": "?",
-  "rotate": 180 }`.
+  char can be `{ "base": "a", "mark": "acute" }` or
+  `{ "base": "?", "rotate": 180 }`.
 - Added pair kerning, written to a GPOS table.
 - Added CFF stem hints. They describe the existing outlines and do not change
   the design.
@@ -24,8 +29,8 @@
   designer URL travel with the JSON instead of living in the editor.
 - Added a command-line build. `brutalita <config.json> -o <out>` writes an OTF
   without opening the editor.
-- Added an SVG text exporter, so a source can render a specimen as well as
-  build a font.
+- Added an SVG text exporter, so a source can render a specimen as well as build
+  a font.
 - Exported files are named by style — `Brutalita-Regular.otf` — instead of by
   weight number.
 - Redesigned `C`, `M`, `m`, `w`.

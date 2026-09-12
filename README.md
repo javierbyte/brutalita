@@ -39,9 +39,9 @@ Mono files are named `Brutalita Mono-{Style}`, with the space URL-encoded:
 }
 ```
 
-Both families cover printable ASCII plus the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡`.
-Accents sit in their own band above the cap line, so a line of accented capitals
-still fits its line box; `line-height: normal` is 1.24em.
+Both families cover printable ASCII, the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` —
+and `↕`. Accents sit in their own band above the cap line, so a line of accented
+capitals still fits its line box; `line-height: normal` is 1.24em.
 
 ## CLI
 
@@ -105,7 +105,7 @@ Exit codes: `0` success, `1` usage or I/O error, `2` invalid font source.
 ## Development
 
 ```sh
-pnpm dev         # the editor at localhost:3000
+pnpm dev         # the editor at localhost:2788
 pnpm cli         # run the CLI from source
 pnpm assets      # regenerate every committed artifact (fonts + banner)
 pnpm test        # unit tests + golden font/SVG regression tests

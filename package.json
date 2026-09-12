@@ -1,7 +1,7 @@
 {
   "name": "brutalita",
   "description": "Geometric font and web font editor.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "homepage": "https://brutalita.com",
   "keywords": [
     "font",
@@ -28,15 +28,15 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 2788",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 2788",
     "deploy": "vercel --prod",
     "cli": "tsx cli/index.ts",
     "build:cli": "tsx scripts/build-cli.ts",
     "test": "tsx --test \"cli/**/*.test.ts\" \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "fonts:otf": "tsx cli/index.ts build src/font.json -d public/font -w all --no-mono --timestamp 2026-08-30 && tsx cli/index.ts build src/font.json -d public/font -w all --mono --timestamp 2026-08-30",
+    "fonts:otf": "tsx cli/index.ts build src/font.json -d public/font -w all --no-mono --timestamp 2026-09-12 && tsx cli/index.ts build src/font.json -d public/font -w all --mono --timestamp 2026-09-12",
     "fonts:web": "tsx scripts/build-webfonts.ts",
     "fonts": "pnpm fonts:otf && pnpm fonts:web",
     "cover": "tsx scripts/update-cover.ts",

@@ -1,6 +1,8 @@
+/* The app's <body> is its own scroll container; here the viewport scrolls
+   instead, so the header can stick to the top of a very long list. */
 :global(body):has(.page) {
   height: auto;
-  overflow-y: auto;
+  overflow: visible;
   background: #f4f2eb;
 }
 
@@ -10,11 +12,144 @@
   background: #f4f2eb;
   color: #20201e;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --weight-specimen: 400;
+  --family-specimen: var(--font-brutalita);
 }
 
+/* The header's radio is the only switch on the page; every row follows it. */
+.page:has(.weights input[value='100']:checked) { --weight-specimen: 100; }
+.page:has(.weights input[value='200']:checked) { --weight-specimen: 200; }
+.page:has(.weights input[value='300']:checked) { --weight-specimen: 300; }
+.page:has(.weights input[value='400']:checked) { --weight-specimen: 400; }
+.page:has(.weights input[value='500']:checked) { --weight-specimen: 500; }
+.page:has(.weights input[value='600']:checked) { --weight-specimen: 600; }
+.page:has(.weights input[value='700']:checked) { --weight-specimen: 700; }
+.page:has(.weights input[value='800']:checked) { --weight-specimen: 800; }
+.page:has(.weights input[value='900']:checked) { --weight-specimen: 900; }
+
 .header {
-  padding-bottom: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 16px 0 16px;
+  margin-top: -32px;
+  background: #f4f2eb;
   border-bottom: 1px solid #20201e;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Weight switch ------------------------------------------------------------- */
+
+.weights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  width: fit-content;
+  margin: 16px 0 0;
+  padding: 0;
+  /* The gap is the grid: the fieldset paints the rules between options, so a
+     wrapped row is separated the same way as a neighbour. */
+  background: #20201e;
+  border: 1px solid #20201e;
+}
+
+.weight {
+  position: relative;
+  display: block;
+  background: #f4f2eb;
+  text-align: center;
+}
+
+/* Kept in the layer and focusable; only its painting is handed to the spans. */
+.weight input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.weightValue,
+.weightName {
+  display: block;
+  padding: 0 12px;
+  color: #65655d;
+  font-synthesis: none;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* Each option previews the weight it selects. */
+.weightValue {
+  padding-top: 6px;
+  font-family: var(--font-brutalita), monospace;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: var(--weight-option);
+}
+
+.weightName {
+  padding-bottom: 6px;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.weight[data-weight='100'] { --weight-option: 100; }
+.weight[data-weight='200'] { --weight-option: 200; }
+.weight[data-weight='300'] { --weight-option: 300; }
+.weight[data-weight='400'] { --weight-option: 400; }
+.weight[data-weight='500'] { --weight-option: 500; }
+.weight[data-weight='600'] { --weight-option: 600; }
+.weight[data-weight='700'] { --weight-option: 700; }
+.weight[data-weight='800'] { --weight-option: 800; }
+.weight[data-weight='900'] { --weight-option: 900; }
+
+.weight:hover .weightValue,
+.weight:hover .weightName {
+  background: #ebe9e1;
+}
+
+.weight:has(input:checked) .weightValue,
+.weight:has(input:checked) .weightName {
+  background: #20201e;
+  color: #f4f2eb;
+}
+
+.weight:has(input:focus-visible) {
+  outline: 2px solid #20201e;
+  outline-offset: 2px;
+}
+
+/* Family switch ------------------------------------------------------------ */
+
+.page:has(.families input[value='mono']:checked) {
+  --family-specimen: var(--font-brutalita-mono);
+}
+
+.families {
+  margin-top: 8px;
+}
+
+.family[data-family='sans'] .weightValue {
+  font-family: var(--font-brutalita), monospace;
+}
+
+.family[data-family='mono'] .weightValue {
+  font-family: var(--font-brutalita-mono), monospace;
 }
 
 .heading {
@@ -71,8 +206,8 @@
 }
 
 .sample {
-  font-family: var(--font-brutalita), monospace;
-  font-weight: 400;
+  font-family: var(--family-specimen), monospace;
+  font-weight: var(--weight-specimen);
   font-synthesis: none;
   line-height: 1.5;
   white-space: nowrap;

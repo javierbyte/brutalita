@@ -55,7 +55,7 @@ test('serialized font ink matches the original SVG strokes across the character 
         if (command.type === 'M') rings.push([]);
         if (command.type === 'M' || command.type === 'L') {
           rings[rings.length - 1].push({
-            x: (command.x - KERNING / 2 - metrics.stem / 2) / 80,
+            x: (command.x - metrics.inkOffset - KERNING / 2 - metrics.stem / 2) / 80,
             y: (metrics.capHeight - metrics.stem / 2 - command.y) / 80,
           });
         }
