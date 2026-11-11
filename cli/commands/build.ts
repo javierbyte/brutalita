@@ -11,7 +11,6 @@ import { GLOBAL_OPTIONS } from '../context';
 import type { CommandContext } from '../context';
 import { isStdout, writeOutput, writeStdout } from '../io';
 import { formatBytes } from '../log';
-import { stampTimestamps } from '../otf-deterministic';
 import {
   applyConfigOverrides,
   loadValidatedSource,
@@ -162,14 +161,9 @@ export function run(
     const config: FontConfig = { ...baseConfig, weight };
     const style = styleName(config);
 
-    // Hints go in before the timestamps: stamping fixes up head's checksum and
-    // the whole-file checkSumAdjustment, which the CFF rewrite invalidates.
-    let bytes: Buffer = Buffer.from(
+    const bytes: Buffer = Buffer.from(
       buildFontBytes(source.chars, config, { createdTimestamp })
     );
-    if (createdTimestamp !== undefined) {
-      bytes = stampTimestamps(bytes, createdTimestamp);
-    }
 
     if (toStdout) {
       if (!values['dry-run']) writeStdout(bytes);

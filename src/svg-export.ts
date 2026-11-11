@@ -1,13 +1,11 @@
-import {
-  KERNING,
-  SCALE_X,
-  fontKerning,
-  monospaceAdvance as monospaceAdvanceUnits,
-} from './font-maker';
+import { SCALE_X, fontLayout, stemWidth } from './font-maker';
 import { kerningMap, pairKey } from './kerning';
+import { anchorEnds, cornerOptions, sharpPath, strokePath } from './corners';
+import type { CornerStyle, StrokeStyle } from './corners';
 import { SEGMENTS } from './types';
 import type { FontDefinition, FontWeightType } from './types';
 import { editorStrokeWidth } from './weights';
+import { slantFactor } from './slant';
 
 // Render brutalita text to a single, self-contained SVG of single-line strokes —
 // the same look as the editor preview (src/components/key.tsx + .key/.type in
@@ -24,12 +22,12 @@ const HEIGHT = 1 * EDITOR_FONT_SIZE;
 const ADVANCE = 14;
 const LINE_HEIGHT = 30;
 
-// Horizontal metrics come from the .otf build itself (src/font-maker.ts) and
-// are reused for the proportional (non-mono) layout. In this editor space one
-// glyph cell (SCALE_X font units) spans WIDTH px, so FONT_UNITS_PER_PX converts
-// those .otf metrics to px.
+// The proportional (non-mono) layout is the .otf build's own: advances, the
+// position of each skeleton inside its advance, and kerning all come from
+// fontLayout (src/font-maker.ts), so a line set here is exactly as wide as the
+// same line set in the font. In this editor space one glyph cell (SCALE_X font
+// units) spans WIDTH px, so FONT_UNITS_PER_PX converts those metrics to px.
 const FONT_UNITS_PER_PX = SCALE_X / WIDTH; // 640 / 8 = 80
-const KERN_PX = KERNING / FONT_UNITS_PER_PX; // 3.2px gap between proportional glyphs
 
 export type SvgExportOptions = {
   padding?: number;
@@ -40,11 +38,25 @@ export type SvgExportOptions = {
   weight?: FontWeightType;
   /** Font aspect ratio used by the shared optical kerning calculation. */
   height?: number;
+  /** Pen, corner style and curve size, matching the font configuration. */
+  stroke?: StrokeStyle;
+  corners?: CornerStyle;
+  cornerRadius?: number;
+  /** Rightward italic angle in degrees, matching the font configuration. */
+  slant?: number;
   /**
-   * Fixed pitch (default) or proportional spacing. When `false`, glyphs advance
-   * by ink width plus the spacing gap, with half the gap on either side.
+   * Fixed pitch (default) or proportional spacing. When `false`, glyphs are
+   * spaced and kerned exactly as the proportional font built from the same
+   * options would be.
    */
   monospace?: boolean;
+  /**
+   * Proportional spacing in font units, matching the font configuration:
+   * letter gap, space advance, and the most a kerning pair may close.
+   */
+  spacing?: number;
+  wordSpacing?: number;
+  kerning?: number;
   /**
    * Paint a rect of this colour behind the text, covering the whole viewBox.
    * Default: no background, so the SVG stays transparent.
@@ -87,22 +99,64 @@ export function renderTextToSVG(
   const monospace = options.monospace ?? true;
   const strokeWidth = options.strokeWidth ?? editorStrokeWidth(weight);
   const dotRadius = strokeWidth * 0.75;
+  const shear = slantFactor(options.slant);
+  const curves = cornerOptions(options, HEIGHT / SEGMENTS[1]);
+  const sharp = options.stroke === 'sharp';
 
   // Reserve room for the stroke half-width / dot radius so round caps never clip,
   // and so proportional side bearings sit beside the visible ink, not the path.
   const inkPad = Math.max(strokeWidth / 2, dotRadius);
+  const horizontalInkPad = inkPad * (1 + Math.abs(shear));
 
-  // Proportional spacing follows ink bounds without screen-pixel quantization.
-  // Keep the measured stroke/dot radii so SVG spacing matches the font.
-  const monoAdvancePx = monospaceAdvanceUnits(weight) / FONT_UNITS_PER_PX;
-  const spaceAdvance = monoAdvancePx * 0.8;
-  const kern = monospace
-    ? new Map<string, number>()
-    : kerningMap(fontKerning(definition, { weight, height, monospace }));
+  // Only the characters being set: kerning is measured between every pair of
+  // glyphs it is given, and a line of text uses a fraction of the font.
+  const layout = monospace
+    ? undefined
+    : fontLayout(
+        Object.fromEntries(
+          [...new Set(text)]
+            .filter((char) => definition[char])
+            .map((char) => [char, definition[char]])
+        ),
+        {
+          weight,
+          height,
+          monospace,
+          stroke: options.stroke,
+          corners: options.corners,
+          cornerRadius: options.cornerRadius,
+          slant: options.slant,
+          spacing: options.spacing,
+          wordSpacing: options.wordSpacing,
+          kerning: options.kerning,
+        }
+      );
+  const kern = kerningMap(layout?.kerning ?? []);
+  // The font spaces glyphs by the stroke its weight draws. A stroke-width
+  // override is drawn around the same skeleton, so let it push the glyphs
+  // apart by as much as it thickens them and the whitespace between two
+  // letters stays what the spacing asked for.
+  const strokeGrowth =
+    options.strokeWidth === undefined
+      ? 0
+      : strokeWidth - stemWidth(weight) / FONT_UNITS_PER_PX;
 
   // Strokes (>=2 points) become path subpaths; single-point layers become dots.
   const strokeRuns: string[] = [];
   const dots: [number, number][] = [];
+  const slantedLines: string[] = [];
+  const renderBody = () => {
+    const body: string[] = [];
+    if (strokeRuns.length) {
+      body.push(sharp
+        ? `    <path d="${strokeRuns.join(' ')}" fill="${color}" stroke="none" />`
+        : `    <path d="${strokeRuns.join(' ')}" />`);
+    }
+    for (const [cx, cy] of dots) {
+      body.push(`    <circle cx="${num(cx)}" cy="${num(cy)}" r="${num(dotRadius)}" fill="${color}" stroke="none" />`);
+    }
+    return body.join('\n');
+  };
   const missingSet = new Set<string>();
 
   // Bounding box over all drawn points, so we can fit the canvas tightly.
@@ -126,63 +180,70 @@ export function renderTextToSVG(
     [...line].forEach((char, colIdx) => {
       const layers = definition[char];
 
-      // Map this glyph's layers to local px (origin at x = 0) and measure its ink
-      // span, so proportional layout can advance by the glyph's real width.
-      let glyphMinX = Infinity;
-      let glyphMaxX = -Infinity;
+      // Map this glyph's layers to local px (origin at grid column 0).
       const localLayers: [number, number][][] = [];
       if (layers) {
         for (const layer of layers) {
           if (!layer.length) continue;
-          const pts = layer.map(([x, y]): [number, number] => {
-            const px = mapX(x);
-            const radius = layer.length === 1 ? dotRadius : strokeWidth / 2;
-            glyphMinX = Math.min(glyphMinX, px - radius);
-            glyphMaxX = Math.max(glyphMaxX, px + radius);
-            return [px, mapY(y)];
-          });
-          localLayers.push(pts);
+          localLayers.push(
+            layer.map(([x, y]): [number, number] => [mapX(x), mapY(y)])
+          );
         }
       } else if (char !== ' ') {
         // Unknown glyph: advance the cell but draw nothing (' ' is expected blank).
         missingSet.add(char);
       }
 
-      // Resolve the cell's x origin: fixed pitch, or proportional (left side
-      // bearing + ink + kerning). Blank/unknown glyphs advance by a space.
+      // Resolve the cell's x origin: fixed pitch, or the font's own advance,
+      // skeleton position and kerning. Blank/unknown glyphs advance by a space.
       let originX: number;
-      if (monospace) {
+      if (!layout) {
         originX = colIdx * ADVANCE;
-      } else if (Number.isFinite(glyphMinX)) {
-        penX += (kern.get(pairKey(previous, char)) ?? 0) / FONT_UNITS_PER_PX;
-        originX = penX + KERN_PX / 2 - glyphMinX;
-        penX += glyphMaxX - glyphMinX + KERN_PX;
       } else {
-        penX += spaceAdvance;
-        previous = char;
-        return;
+        const metrics = layout.glyphs.get(char);
+        if (!metrics) {
+          penX += layout.spaceAdvance / FONT_UNITS_PER_PX;
+          previous = char;
+          return;
+        }
+        penX += (kern.get(pairKey(previous, char)) ?? 0) / FONT_UNITS_PER_PX;
+        originX =
+          penX + metrics.skeletonOrigin / FONT_UNITS_PER_PX + strokeGrowth / 2;
+        penX += metrics.advance / FONT_UNITS_PER_PX + strokeGrowth;
       }
       previous = char;
 
-      for (const pts of localLayers) {
+      const outline: [number, number][][] = [];
+      for (const pts of curves && !sharp ? anchorEnds(localLayers, curves) : localLayers) {
         const points = pts.map(([px, py]): [number, number] => {
           const gx = originX + px;
           const gy = originY + py;
-          track(gx, gy);
+          track(gx + shear * (HEIGHT - py), gy);
           return [gx, gy];
         });
 
-        if (points.length === 1) {
+        if (sharp) {
+          outline.push(points);
+        } else if (points.length === 1) {
           dots.push(points[0]);
         } else {
           const [first, ...rest] = points;
           const d = `M ${num(first[0])},${num(first[1])} L ${rest
             .map(([x, y]) => `${num(x)},${num(y)}`)
             .join(' ')}`;
-          strokeRuns.push(d);
+          strokeRuns.push(curves ? strokePath(points, curves) : d);
         }
       }
+      if (outline.length) strokeRuns.push(sharpPath(outline, strokeWidth / 2, curves));
     });
+    if (shear) {
+      const body = renderBody();
+      if (body) {
+        slantedLines.push(`    <g transform="matrix(1 0 ${-shear} 1 ${shear * (originY + HEIGHT)} 0)">\n${body}\n    </g>`);
+      }
+      strokeRuns.length = 0;
+      dots.length = 0;
+    }
   });
 
   let viewX: number;
@@ -190,9 +251,9 @@ export function renderTextToSVG(
   let viewW: number;
   let viewH: number;
   if (Number.isFinite(minX)) {
-    viewX = minX - inkPad - padding;
+    viewX = minX - horizontalInkPad - padding;
     viewY = minY - inkPad - padding;
-    viewW = maxX - minX + 2 * (inkPad + padding);
+    viewW = maxX - minX + 2 * (horizontalInkPad + padding);
     viewH = maxY - minY + 2 * (inkPad + padding);
   } else {
     // Empty / all-blank text: just an empty padded canvas.
@@ -208,17 +269,7 @@ export function renderTextToSVG(
   const renderedW = options.width ? String(Math.round(viewW * scale)) : num(viewW);
   const renderedH = options.width ? String(Math.round(viewH * scale)) : num(viewH);
 
-  const body: string[] = [];
-  if (strokeRuns.length) {
-    body.push(`    <path d="${strokeRuns.join(' ')}" />`);
-  }
-  for (const [cx, cy] of dots) {
-    body.push(
-      `    <circle cx="${num(cx)}" cy="${num(cy)}" r="${num(
-        dotRadius
-      )}" fill="${color}" stroke="none" />`
-    );
-  }
+  const body = shear ? slantedLines.join('\n') : renderBody();
 
   const backgroundRect = options.background
     ? `\n  <rect x="${num(viewX)}" y="${num(viewY)}" width="${num(
@@ -232,7 +283,7 @@ export function renderTextToSVG(
   <g fill="none" stroke="${color}" stroke-width="${num(
     strokeWidth
   )}" stroke-linecap="round" stroke-linejoin="round">
-${body.join('\n')}
+${body}
   </g>
 </svg>
 `;

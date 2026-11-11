@@ -74,8 +74,12 @@ function describeOtf(path: string, values: Values, ctx: CommandContext): number 
     return undefined;
   };
 
-  const family = readName('fontFamily') ?? '(unnamed)';
-  const style = readName('fontSubfamily') ?? '(none)';
+  // The typographic names first: names 1 and 2 file every weight but Regular
+  // and Bold as a family of its own ("Brutalita Light" / "Regular").
+  const family =
+    readName('preferredFamily') ?? readName('fontFamily') ?? '(unnamed)';
+  const style =
+    readName('preferredSubfamily') ?? readName('fontSubfamily') ?? '(none)';
   const designer = readName('designer');
   const fontVersion = readName('version');
 

@@ -3,7 +3,7 @@
 // opentype.js cannot emit them: its CFF writer's PRIVATE_DICT_META carries only
 // subrs/defaultWidthX/nominalWidthX, and glyphToOps emits nothing but
 // rmoveto/rlineto/rrcurveto/endchar. So the hints are spliced into the
-// serialized bytes here, the same way otf-deterministic.ts patches head.
+// serialized bytes here, the same way font-maker.ts patches head.
 //
 // These hints describe stem edges and alignment zones to CFF rasterizers.
 // Their effect depends on the renderer and its hinting mode; they cannot

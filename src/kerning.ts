@@ -125,10 +125,16 @@ export function calculateKerning<Key>(
       const closestGap = Math.min(...gaps);
       const requested = options.targetGap - opticalGap;
       const safe = minimumClearance - closestGap;
-      const value =
-        Math.round(
-          Math.max(requested, safe, -maximumReduction) / quantization
-        ) * quantization;
+      // Round the request, then hold it to the limits: rounding the limited
+      // value instead could step past the clearance by half a quantum, which
+      // is real ink once the quantum is as coarse as a pixel.
+      const limit =
+        Math.ceil(Math.max(safe, -maximumReduction) / quantization) *
+        quantization;
+      const value = Math.max(
+        Math.round(requested / quantization) * quantization,
+        limit
+      );
       if (value <= -minimumAdjustment) {
         pairs.push({ left: left.glyph.key, right: right.glyph.key, value });
       }

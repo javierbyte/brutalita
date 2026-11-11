@@ -15,6 +15,10 @@ import type {
   MarkSet,
 } from './types';
 import { MAX_WEIGHT, MIN_WEIGHT, parseWeight } from './weights';
+import { CORNER_STYLES, MAX_CORNER_RADIUS, MIN_CORNER_RADIUS, STROKE_STYLES, isCornerStyle, isStrokeStyle, isValidCornerRadius } from './corners';
+import { isValidSlant, MAX_SLANT } from './slant';
+import { isValidSpacing, SPACING_RANGES } from './spacing';
+import type { SpacingKey } from './spacing';
 
 // Validation for a font source ({ config, marks, chars }), shared by the CLI and
 // the browser editor. Node-safe on purpose: no DOM, no alert() — callers decide
@@ -33,6 +37,15 @@ const KNOWN_CONFIG_KEYS = [
   'weight',
   'height',
   'monospace',
+  'slant',
+  'stroke',
+  'corners',
+  'cornerRadius',
+  // Written by editor builds that had a single on/off corner setting.
+  'continuousCorners',
+  'spacing',
+  'wordSpacing',
+  'kerning',
   'designer',
   'designerURL',
   'styleName',
@@ -113,6 +126,66 @@ function validateConfig(
 
   if (raw.name !== undefined) config.name = String(raw.name);
   if (raw.monospace !== undefined) config.monospace = Boolean(raw.monospace);
+  if (raw.slant !== undefined) {
+    if (isValidSlant(raw.slant)) {
+      config.slant = raw.slant;
+    } else {
+      errors.push({
+        severity: 'error',
+        field: 'config.slant',
+        message: `must be a number between 0 and ${MAX_SLANT} degrees`,
+      });
+    }
+  }
+  if (raw.stroke !== undefined) {
+    if (isStrokeStyle(raw.stroke)) {
+      config.stroke = raw.stroke;
+    } else {
+      errors.push({
+        severity: 'error',
+        field: 'config.stroke',
+        message: `must be one of ${STROKE_STYLES.join(', ')}`,
+      });
+    }
+  }
+  if (raw.corners !== undefined) {
+    if (isCornerStyle(raw.corners)) {
+      config.corners = raw.corners;
+    } else {
+      errors.push({
+        severity: 'error',
+        field: 'config.corners',
+        message: `must be one of ${CORNER_STYLES.join(', ')}`,
+      });
+    }
+  } else if (raw.continuousCorners === true) {
+    config.corners = 'continuous';
+  }
+  if (raw.cornerRadius !== undefined) {
+    if (isValidCornerRadius(raw.cornerRadius)) {
+      config.cornerRadius = raw.cornerRadius;
+    } else {
+      errors.push({
+        severity: 'error',
+        field: 'config.cornerRadius',
+        message: `must be a number between ${MIN_CORNER_RADIUS} and ${MAX_CORNER_RADIUS}`,
+      });
+    }
+  }
+  for (const key of Object.keys(SPACING_RANGES) as SpacingKey[]) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (isValidSpacing(key, value)) {
+      config[key] = value;
+    } else {
+      const { min, max } = SPACING_RANGES[key];
+      errors.push({
+        severity: 'error',
+        field: `config.${key}`,
+        message: `must be a number between ${min} and ${max} font units`,
+      });
+    }
+  }
   if (raw.designer !== undefined) config.designer = String(raw.designer);
   if (raw.designerURL !== undefined) config.designerURL = String(raw.designerURL);
   if (raw.styleName !== undefined) config.styleName = String(raw.styleName);

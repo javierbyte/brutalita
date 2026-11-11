@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import Opentype from 'opentype.js';
 import decompress from 'woff2-encoder/decompress';
 import { MARK_ROWS } from './compose';
-import { buildFontBytes, fontMetrics, KERNING } from './font-maker';
+import { buildFontBytes, fontMetrics } from './font-maker';
+import { DEFAULT_SPACING as KERNING } from './spacing';
 import { validateFontSource } from './font-validate';
 import { readHints } from './cff-hint';
 import { SHIPPED_WEIGHTS, styleName } from './weights';
@@ -46,8 +47,13 @@ test('Regular preserves the original design scale and natural spacing', () => {
     const glyph = font.glyphs.get(i);
     const xs = glyph.path.commands.flatMap(command => 'x' in command ? [command.x] : []);
     if (!xs.length) continue;
-    assert.equal(Math.min(...xs), bearing, `${glyph.name} left bearing`);
-    assert.equal(glyph.advanceWidth, Math.max(...xs) + bearing, `${glyph.name} right bearing`);
+    // Measured to the stroke: a dot is half a stem wider than the stroke it
+    // sits on, and may reach that far into either bearing.
+    const overhang: number = metrics.stem / 4;
+    const left: number = Math.min(...xs);
+    const right: number = (glyph.advanceWidth ?? 0) - Math.max(...xs);
+    assert.ok(left === bearing || left === bearing - overhang, `${glyph.name} left bearing ${left}`);
+    assert.ok(right === bearing || right === bearing - overhang, `${glyph.name} right bearing ${right}`);
   }
 });
 
@@ -94,7 +100,8 @@ test('both published families contain all weights and round-trip through WOFF2',
       const webBytes = await decompress(readFileSync(`${base}.woff2`));
       const otf = parse(otfBytes);
       const web = parse(webBytes);
-      assert.equal(otf.getEnglishName('fontFamily'), family);
+      assert.equal(otf.getEnglishName('preferredFamily'), family);
+      assert.equal(otf.getEnglishName('preferredSubfamily'), styleName({ weight }));
       assert.equal(otf.tables.os2.usWeightClass, weight);
       assert.equal(otf.tables.post.isFixedPitch, monospace ? 1 : 0);
       assert.equal(otf.ascender, metrics.ascender);

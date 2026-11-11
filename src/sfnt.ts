@@ -31,6 +31,38 @@ function tagNumber(tag: string): number {
   ) >>> 0;
 }
 
+/** A copy of one table's bytes, or undefined when the font has no such table. */
+export function readSfntTable(
+  input: Uint8Array,
+  tagName: string
+): Uint8Array | undefined {
+  const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  const wanted = tagNumber(tagName);
+  const count = view.getUint16(4);
+  for (let i = 0; i < count; i++) {
+    const record = HEADER_SIZE + i * RECORD_SIZE;
+    if (view.getUint32(record) !== wanted) continue;
+    const offset = view.getUint32(record + 8);
+    return input.slice(offset, offset + view.getUint32(record + 12));
+  }
+  return undefined;
+}
+
+/**
+ * Return a new font with fields of one existing table rewritten in place, and
+ * every checksum repaired. `patch` receives a view over a copy of the table.
+ */
+export function patchSfntTable(
+  input: Uint8Array,
+  tagName: string,
+  patch: (table: DataView) => void
+): Uint8Array {
+  const table = readSfntTable(input, tagName);
+  if (!table) throw new Error(`the font has no ${tagName} table`);
+  patch(new DataView(table.buffer, table.byteOffset, table.byteLength));
+  return replaceSfntTable(input, tagName, table);
+}
+
 /** Return a new font with one table added or replaced. The input is untouched. */
 export function replaceSfntTable(
   input: Uint8Array,

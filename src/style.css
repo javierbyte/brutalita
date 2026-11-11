@@ -114,65 +114,68 @@ html {
   }
 }
 
-.type,
-textarea {
-  width: calc(100vw - 32px);
-  margin: 0;
-  padding: 14px;
+/*
+  The preview. .type carries the live font (set inline, see useLiveFont) and
+  both children inherit it: an invisible mirror of the text that sizes the
+  area, and the textarea laid over it that is actually seen and edited. They
+  must wrap identically, so every property that affects layout is shared.
+*/
+.type {
+  min-height: 100%;
+  line-height: 30px;
+  color: #fff;
+  font-kerning: normal;
+  font-synthesis: none;
+  /* macOS thickens smoothed text by a fraction of a pixel on every side,
+     which greys both edges of a stem that would otherwise fill whole pixels. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.type-mirror,
+.type textarea {
   display: block;
-  position: absolute;
-  overflow: hidden;
-  top: 0;
-  left: 0;
+  width: 100%;
+  margin: 0;
+  padding: 22px 14px 200px;
+  border: none;
+  font: inherit;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
 }
 
 @media screen and (min-width: 640px) {
-  .type,
-  textarea {
-    padding: 28px;
+  .type-mirror,
+  .type textarea {
+    padding: 36px 28px 200px;
   }
 }
 
-textarea {
-  margin-top: 8px;
-  transform-origin: center left;
-  transform: scalex(1.01);
-  word-break: break-all;
-  opacity: 1;
-  background-color: #0000;
-  color: #f000;
+.type-mirror {
+  visibility: hidden;
+}
+
+.type textarea {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: transparent;
+  color: inherit;
   -webkit-appearance: none;
   appearance: none;
-  border: none;
-  font-size: 23px;
-  letter-spacing: 0;
-  font-family: Courier, monospace;
-  line-height: 30px;
-  /* Sits above the rendered glyph layer (.type) for caret/selection, but below
-     Radix overlays (popover/menu/sheet are z-50) so dropdowns stay clickable. */
-  z-index: 10;
+  border-radius: 0;
   resize: none;
   caret-color: white;
   outline: none;
 }
-textarea:focus,
-textarea:active {
-  outline: none;
-}
 
-textarea::selection {
+.type textarea::selection {
   background-color: #e74c3c80;
-  color: transparent;
 }
 
-.type {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-}
-.type-break {
-  width: 100%;
-}
 svg {
   display: block;
   margin: 0;

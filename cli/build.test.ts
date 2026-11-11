@@ -6,6 +6,7 @@ import Opentype from 'opentype.js';
 
 import {
   buildFont,
+  buildFontBytes,
   fontDisplayName,
   fontFileName,
   stemWidth,
@@ -14,7 +15,6 @@ import { validateFontSource } from '../src/font-validate';
 import source from '../src/font.json';
 import { SHIPPED_WEIGHTS, styleName } from '../src/weights';
 
-import { stampTimestamps } from './otf-deterministic';
 import { renderFilename, resolveWeights, slugify } from './source';
 
 // Everything about a font that a build must reproduce exactly. head.created and
@@ -123,20 +123,14 @@ test('filenames and display names survive a missing version', () => {
 });
 
 test('the same source and timestamp produce identical bytes', () => {
-  const bytes = (): Buffer =>
-    stampTimestamps(
-      Buffer.from(
-        buildFont(chars, config, { createdTimestamp: 1704067200 }).toArrayBuffer()
-      ),
-      1704067200
-    );
+  const bytes = () =>
+    buildFontBytes(chars, config, { createdTimestamp: 1704067200 });
   assert.deepEqual(bytes(), bytes());
 });
 
-test('stampTimestamps keeps the font parseable and its checksums valid', () => {
-  const stamped = stampTimestamps(
-    Buffer.from(buildFont(chars, config).toArrayBuffer()),
-    1704067200
+test('a stamped build is parseable, with valid checksums and both dates pinned', () => {
+  const stamped = Buffer.from(
+    buildFontBytes(chars, config, { createdTimestamp: 1704067200 })
   );
 
   const font = parse(stamped);

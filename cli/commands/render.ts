@@ -154,6 +154,13 @@ export function run(
       : undefined,
     weight,
     height: config.height,
+    stroke: config.stroke,
+    corners: config.corners,
+    cornerRadius: config.cornerRadius,
+    slant: config.slant,
+    spacing: config.spacing,
+    wordSpacing: config.wordSpacing,
+    kerning: config.kerning,
     // The old CLI dropped this, so proportional fonts still rendered monospaced.
     monospace: config.monospace,
   });

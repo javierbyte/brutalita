@@ -6,11 +6,16 @@ import polygonClipping from 'polygon-clipping';
 import { addHints } from './cff-hint';
 import type { FontHints, GlyphHints, StemHint } from './cff-hint';
 import { MARK_ROWS } from './compose';
+import { anchorEnds, cornerOptions, flattenStroke, sharpGlyph, strokeCommands, strokeOutline } from './corners';
+import { glyphName } from './glyph-names';
 import { addKerning } from './gpos';
 import { calculateKerning } from './kerning';
 import type { KerningGlyph, KerningOptions, KerningPair } from './kerning';
 import { FontConfig, FontDefinition, FontWeightType } from './types';
-import { strokeFraction, styleName } from './weights';
+import { patchSfntTable } from './sfnt';
+import { strokeFraction, styleLink, styleName } from './weights';
+import { slantFactor } from './slant';
+import { PIXEL, resolveSpacing, sideBearings as splitBearings } from './spacing';
 
 // Approximate SVG round caps/joins to sub-unit accuracy at shipped weights.
 // Sixteen sides visibly faceted the curves when enlarged.
@@ -29,19 +34,11 @@ const CHAR_Y = 4;
 export const SCALE_X = 640;
 export const UNITS_PER_EM = 2048;
 /**
- * Nominal whitespace between two flat-sided letters such as "HH". Every
- * proportional glyph carries half of it on each side.
+ * Where the first grid column's stroke starts before a family positions the
+ * glyph: the monospace cell shifts it by MONO_LATTICE_OFFSET, the proportional
+ * family replaces it with the glyph's own bearing (see ./spacing).
  */
-export const KERNING = 384;
-
-/**
- * Advance of the space glyph. Ink-to-ink across a word boundary is this plus
- * KERNING, since each neighbour contributes half a bearing. Deriving it from
- * KERNING holds the word gap at two and a half times the letter gap; tuning
- * the two independently had drifted it out to six times, which read as
- * cramped letters rather than as generous words.
- */
-const WORD_SPACE = Math.round(KERNING * 1.5);
+export const CELL_BEARING = 192;
 
 // Any letter, not just the ASCII ones: "Ó" has to kern like the "O" it is
 // built from, and "¿" opens a clause the way "(" opens a parenthesis.
@@ -57,25 +54,38 @@ function includeLatinKerningPair(left: string, right: string): boolean {
   );
 }
 
+const KERNING_MINIMUM_ADJUSTMENT = PIXEL;
+
 /**
  * The single kerning configuration. The OTF's GPOS table and the SVG renderer
  * both lay text out from this, so they must never drift apart.
  */
-const LATIN_KERNING_OPTIONS: Omit<KerningOptions<string>, 'includePair'> & {
-  includePair: (left: string, right: string) => boolean;
-} = {
-  targetGap: KERNING,
-  sampleStep: 32,
-  minimumClearance: 96,
-  quantization: 8,
-  minimumAdjustment: 32,
-  // Cap a pair at a quarter of the nominal gap. The measurement happily asks
-  // for far more on open pairs such as "Ta", but Brutalita's stems are light
-  // and wide-set, and closing more than this reads as a typo rather than as
-  // even colour.
-  maximumReduction: KERNING / 4,
-  includePair: includeLatinKerningPair,
-};
+function latinKerningOptions(config: GeometryConfig): KerningOptions<string> {
+  const { spacing, kerning } = resolveSpacing(config);
+  return {
+    targetGap: spacing,
+    sampleStep: 32,
+    minimumClearance: 96,
+    // Whole pixels, like every other advance: a pair that closed a fraction of
+    // one would knock the rest of its line off the pixel grid.
+    quantization: PIXEL,
+    minimumAdjustment: KERNING_MINIMUM_ADJUSTMENT,
+    maximumReduction: kerning,
+    includePair: includeLatinKerningPair,
+  };
+}
+
+/** Pair adjustments for already-built glyphs; none for a monospace font. */
+function latinKerning(
+  glyphs: KerningGlyph<string>[],
+  config: GeometryConfig
+): KerningPair<string>[] {
+  // A cap below the smallest adjustment worth writing can produce no pair, so
+  // skip measuring every combination just to discard them all.
+  if (config.monospace) return [];
+  if (resolveSpacing(config).kerning < KERNING_MINIMUM_ADJUSTMENT) return [];
+  return calculateKerning(glyphs, latinKerningOptions(config));
+}
 
 /**
  * Only round enough to serialize integral CFF coordinates. An even stem keeps
@@ -88,7 +98,7 @@ export const STEM_QUANTUM = 2;
 /**
  * Every design-grid position is a multiple of 160 units — half a grid column —
  * and so is every stem drawn on one. The nominal bearing then puts the leftmost
- * ink at KERNING / 2 = 192, which is 1.2 of those steps, so at the sizes where a
+ * ink at CELL_BEARING = 192, which is 1.2 of those steps, so at the sizes where a
  * step lands on a whole device pixel the vertical stems still straddle two: a
  * 3-pixel stem rasterizes as four columns with a gray fringe on each side.
  * Moving the monospace ink 32 units left puts it back on the lattice. Measured
@@ -102,10 +112,9 @@ export const STEM_QUANTUM = 2;
  * right: the ink edge is as close to 160 as to 320, and at Black the rightward
  * landing would hang the ink 64 units past its own advance.
  *
- * The proportional family gets no offset. Its advance is ink + KERNING = 2.4
- * steps, so the phase drifts glyph to glyph and no single offset can hold a
- * whole word on the lattice; it would take quantizing KERNING, WORD_SPACE and
- * the kerning pairs, which is a spacing decision rather than a rasterizing one.
+ * The proportional family needs no offset: its bearings, its space and its
+ * kerning pairs are all whole pixels (see ./spacing), so every glyph starts on
+ * the lattice wherever it falls in a line.
  */
 const MONO_LATTICE_OFFSET = -32;
 
@@ -118,7 +127,22 @@ export function monospaceAdvance(_weight: FontWeightType): number {
   return (SCALE_X / 8) * 14;
 }
 
-type GeometryConfig = Pick<FontConfig, 'weight' | 'height' | 'monospace'>;
+// Square font units. A period is some 40,000; a pixel at 16px is 3,900.
+const SLIVER_AREA = 32;
+
+type GeometryConfig = Pick<
+  FontConfig,
+  | 'weight'
+  | 'height'
+  | 'monospace'
+  | 'stroke'
+  | 'corners'
+  | 'cornerRadius'
+  | 'slant'
+  | 'spacing'
+  | 'wordSpacing'
+  | 'kerning'
+>;
 
 function configToMetrics(config: GeometryConfig) {
   const stem = stemWidth(config.weight);
@@ -150,11 +174,11 @@ type Metrics = ReturnType<typeof configToMetrics>;
 /**
  * A design-grid point to font units, as the centre of the stroke that will be
  * drawn through it. Ink then extends halfStem in every direction, which puts
- * the leftmost edge on KERNING / 2 and the baseline row's lower edge on 0.
+ * the leftmost edge on CELL_BEARING and the baseline row's lower edge on 0.
  */
 function gridToUnits(x: number, y: number, metrics: Metrics): [number, number] {
   return [
-    (x * SCALE_X) / CHAR_X + KERNING / 2 + metrics.halfStem,
+    (x * SCALE_X) / CHAR_X + CELL_BEARING + metrics.halfStem,
     metrics.cap - metrics.halfStem - y * metrics.row,
   ];
 }
@@ -201,9 +225,6 @@ function definePolygon() {
       currentPolygon.push(currentPolygon[0]);
       multiPolygon.push(currentPolygon);
     },
-    get() {
-      return [multiPolygon];
-    },
     getUnion() {
       const arrMulti = multiPolygon.map((e) => [e]);
       return polygonClipping.union(arrMulti);
@@ -214,6 +235,7 @@ function definePolygon() {
 function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
   const metrics = configToMetrics(config);
   const { halfStem, stem, monospaceAdvance } = metrics;
+  const shear = slantFactor(config.slant);
   const glyphPolygon = definePolygon();
 
   // Stems for the CFF hints, taken from the skeleton rather than recovered from
@@ -227,6 +249,87 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
   path = path
     .filter((layer) => layer.length)
     .map((layer) => layer.filter((coord) => coord.length));
+
+  // The span of the stroke itself, a stem wide around every skeleton point.
+  // Spacing is measured from this rather than from the ink: a dot is drawn
+  // half a stem wider than its stroke, and a curved corner
+  // sits inside the one it replaces, and neither may move the skeleton off the lattice.
+  let strokeMinX = Infinity;
+  let strokeMaxX = -Infinity;
+  for (const layer of path) {
+    for (const [x, y] of layer) {
+      const [centre] = gridToUnits(x, y, metrics);
+      strokeMinX = Math.min(strokeMinX, centre - halfStem);
+      strokeMaxX = Math.max(strokeMaxX, centre + halfStem);
+    }
+  }
+
+  const curves = cornerOptions(config, metrics.row);
+  const sharp = config.stroke === 'sharp';
+  if (sharp) {
+    const drawn = path.map((layer) => layer.map(([x, y]) => gridToUnits(x, y, metrics)));
+    drawn.forEach((units) => {
+      let previous: [number, number] | undefined;
+      for (const command of strokeCommands(units, curves)) {
+        if (command.type === 'Z') continue;
+        if (command.type === 'L' && previous) {
+          if (previous[0] === command.point[0] && previous[1] !== command.point[1]) {
+            vHints.push({ edge: previous[0] - halfStem, width: stem });
+          }
+          if (previous[1] === command.point[1] && previous[0] !== command.point[0]) {
+            hHints.push({ edge: previous[1] - halfStem, width: stem });
+          }
+        }
+        previous = command.point;
+      }
+    });
+    // As with the round pen, one ring per curved stroke: its flattened bends
+    // as separate pieces are more near-coincident edges than polygon-clipping's
+    // sweep line survives.
+    const ring = (points: [number, number][]) =>
+      strokeOutline(points, halfStem, CIRCLE_SEGMENTS, false);
+    for (const piece of sharpGlyph(drawn, halfStem, curves, 0.5, ring)) {
+      piece.forEach(([x, y], i) => {
+        if (i === 0) glyphPolygon.start(x, y);
+        else glyphPolygon.line(x, y);
+      });
+      glyphPolygon.close();
+    }
+    path = [];
+  } else if (curves) {
+    // Blend after scaling so the curve stays isotropic at any aspect ratio.
+    // One ring per curved stroke avoids thousands of overlapping capsules and
+    // near-coincident intersections in polygon-clipping's sweep line.
+    const drawn = path.map((layer) => layer.map(([x, y]) => gridToUnits(x, y, metrics)));
+    const anchored = anchorEnds(drawn, curves);
+    path = path.filter((_, index) => {
+      const units = anchored[index];
+      const commands = strokeCommands(units, curves);
+      // A straight stroke whose end moved onto a curve has left the grid too.
+      if (units === drawn[index] && !commands.some(c => c.type === 'C')) return true;
+      let previous: [number, number] | undefined;
+      for (const command of commands) {
+        if (command.type === 'Z') continue;
+        // Hint only the straight portions, never the flattened bend segments.
+        if (command.type === 'L' && previous) {
+          if (previous[0] === command.point[0] && previous[1] !== command.point[1]) {
+            vHints.push({ edge: previous[0] - halfStem, width: stem });
+          }
+          if (previous[1] === command.point[1] && previous[0] !== command.point[0]) {
+            hHints.push({ edge: previous[1] - halfStem, width: stem });
+          }
+        }
+        previous = command.point;
+      }
+      const outline = strokeOutline(flattenStroke(units, curves), halfStem, CIRCLE_SEGMENTS);
+      outline.forEach(([x, y], i) => {
+        if (i === 0) glyphPolygon.start(x, y);
+        else glyphPolygon.line(x, y);
+      });
+      glyphPolygon.close();
+      return false;
+    });
+  }
 
   if (path.length) {
     for (const layer of path) {
@@ -365,6 +468,16 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
         Math.round(x),
         Math.round(y),
       ]);
+      if (curves || sharp) {
+        // Offset joins can leave microscopic rings where their intersections
+        // round onto the same CFF coordinates, or where a curve grazes the
+        // stroke beside it. They have no representable ink.
+        const area = contour.reduce((sum, [x, y], i) => {
+          const [nx, ny] = contour[(i + 1) % contour.length];
+          return sum + x * ny - nx * y;
+        }, 0) / 2;
+        if (Math.abs(area) <= SLIVER_AREA) continue;
+      }
       rawContours.push(contour);
       for (const [x] of contour) {
         globalMinX = Math.min(globalMinX, x);
@@ -373,13 +486,19 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
     }
   }
 
+  if (Number.isFinite(strokeMinX)) {
+    globalMinX = strokeMinX;
+    globalMaxX = strokeMaxX;
+  }
+
   // Every proportional glyph keeps the same nominal bearing on both sides.
   // Brutalita is drawn almost entirely from vertical stems, so per-glyph
   // optical bearings had no true diagonal to act on and only tightened the
   // shelved letters (T, I, L, F). Optical spacing is pair kerning's job.
+  const { spacing, wordSpacing } = resolveSpacing(config);
   const sideBearings = config.monospace
     ? { left: 0, right: 0 }
-    : { left: KERNING / 2, right: KERNING / 2 };
+    : splitBearings(spacing);
   const remainingSpaceTranslation = config.monospace
     ? MONO_LATTICE_OFFSET
     : Number.isFinite(globalMinX)
@@ -395,7 +514,9 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
   for (const ring of rawContours) {
       const contour: [number, number][] = [];
       ring.forEach(([x, y], index) => {
-        const px = x + remainingSpaceTranslation;
+        // Shear the finished outline about the skeleton's baseline, including
+        // round caps and dots. Advances stay fixed as the angle changes.
+        const px = Math.round(x + remainingSpaceTranslation + shear * (y - halfStem));
         const py = y;
         contour.push([px, py]);
         if (index === 0) {
@@ -412,12 +533,20 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
   const finalSpacing = config.monospace
     ? monospaceAdvance
     : char === ' ' || !xs.length
-      ? WORD_SPACE
-      : baseDynamicSpacing + sideBearings.left + sideBearings.right;
+      ? wordSpacing
+      : // To half a pixel, which is a whole device pixel on a 2x screen. The
+        // weights whose stem is not a whole number of them (500, 600, 800,
+        // 900) would otherwise push each following glyph off the lattice.
+        // Regular's stem is two whole pixels, so it needs no rounding at all.
+        Math.round(
+          (baseDynamicSpacing + sideBearings.left + sideBearings.right) /
+            (PIXEL / 2)
+        ) *
+        (PIXEL / 2);
 
   const tmpGlyph = new Opentype.Glyph({
-    name: char,
-    unicode: char.charCodeAt(0),
+    name: glyphName(char),
+    unicode: char.codePointAt(0),
     advanceWidth: finalSpacing,
     path: tmpPath,
   });
@@ -426,7 +555,8 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
   // not, since the translation is horizontal only.
   const hints: GlyphHints = {
     h: hHints,
-    v: vHints.map(({ edge, width }) => ({
+    // Slanted stems cannot use axis-aligned vertical CFF hints.
+    v: config.slant ? [] : vHints.map(({ edge, width }) => ({
       edge: edge + remainingSpaceTranslation,
       width,
     })),
@@ -437,7 +567,22 @@ function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
     glyph: tmpGlyph,
     hints,
     contours,
-    leftSideBearing: xs.length ? sideBearings.left : 0,
+    /** Whether the glyph draws anything; a blank one advances like a space. */
+    blank: !xs.length,
+    /**
+     * Where the stroke through grid column 0 is centred, from the glyph's
+     * origin and before any slant: what a stroke renderer needs to put the
+     * skeleton exactly where the outline has it.
+     */
+    skeletonOrigin: CELL_BEARING + halfStem + remainingSpaceTranslation,
+  };
+}
+
+function kerningGlyph(built: ReturnType<typeof makeGlyph>): KerningGlyph<string> {
+  return {
+    key: built.char,
+    advanceWidth: built.glyph.advanceWidth ?? 0,
+    contours: built.contours,
   };
 }
 
@@ -451,15 +596,50 @@ export function fontKerning(
   config: GeometryConfig
 ): KerningPair<string>[] {
   if (config.monospace) return [];
-  const glyphs: KerningGlyph<string>[] = Object.keys(definition).map((char) => {
-    const built = makeGlyph(char, definition[char], config);
-    return {
-      key: char,
-      advanceWidth: built.glyph.advanceWidth ?? 0,
-      contours: built.contours,
-    };
-  });
-  return calculateKerning(glyphs, LATIN_KERNING_OPTIONS);
+  return latinKerning(
+    Object.keys(definition).map((char) =>
+      kerningGlyph(makeGlyph(char, definition[char], config))
+    ),
+    config
+  );
+}
+
+export type FontLayout = {
+  /** Per character, in font units. Blank glyphs are left out. */
+  glyphs: Map<string, { advance: number; skeletonOrigin: number }>;
+  /** Advance of the space, and of any character with nothing to draw. */
+  spaceAdvance: number;
+  kerning: KerningPair<string>[];
+};
+
+/**
+ * Horizontal layout exactly as the built font has it — advances, where each
+ * skeleton sits inside its advance, and the kerning pairs — for renderers that
+ * draw the strokes themselves. Pass only the characters being set: kerning is
+ * measured between every pair of them.
+ */
+export function fontLayout(
+  definition: FontDefinition,
+  config: GeometryConfig
+): FontLayout {
+  const built = Object.keys(definition).map((char) =>
+    makeGlyph(char, definition[char], config)
+  );
+  const glyphs: FontLayout['glyphs'] = new Map();
+  for (const entry of built) {
+    if (entry.blank) continue;
+    glyphs.set(entry.char, {
+      advance: entry.glyph.advanceWidth ?? 0,
+      skeletonOrigin: entry.skeletonOrigin,
+    });
+  }
+  return {
+    glyphs,
+    spaceAdvance: config.monospace
+      ? monospaceAdvance(config.weight)
+      : resolveSpacing(config).wordSpacing,
+    kerning: latinKerning(built.map(kerningGlyph), config),
+  };
 }
 
 /** Family name as written into the font: "Brutalita" / "Brutalita Mono". */
@@ -486,7 +666,7 @@ export function fontMetrics(config: FontConfig) {
     unitsPerEm: UNITS_PER_EM,
     ascender: metrics.ascender,
     descender: metrics.descender,
-    kerning: KERNING,
+    kerning: resolveSpacing(config).spacing,
     scaleX: SCALE_X,
     /** Baseline to cap height. */
     capHeight: metrics.cap,
@@ -537,15 +717,16 @@ function panose(config: FontConfig): number[] {
  * `Font.prototype.fsSelectionValues` but @types/opentype.js declares neither
  * that nor a numeric `fsSelection` option, so the values live here.
  */
+const FS_ITALIC = 1;
 const FS_BOLD = 32;
 const FS_REGULAR = 64;
 const FS_USE_TYPO_METRICS = 128;
 
 export type BuildFontOptions = {
   /**
-   * Unix seconds written to head.created. opentype.js defaults it to "now";
-   * pinning it is half of a reproducible build (see src/otf-deterministic.ts,
-   * which also pins head.modified).
+   * Unix seconds written to head.created and, by buildFontBytes, to
+   * head.modified. Both default to "now", so two builds of an unchanged source
+   * differ; pinning them makes the bytes reproducible.
    */
   createdTimestamp?: number;
 };
@@ -607,10 +788,15 @@ function buildFontWithHints(
   ];
 
   const designer = config.designer?.trim() || undefined;
+  const family = fontName(config);
+  const style = styleName(config);
+  const link = styleLink(config);
+  const xHeight = metrics.cap - metrics.row;
 
   const font = new Opentype.Font({
-    familyName: fontName(config),
-    styleName: styleName(config),
+    familyName: family,
+    styleName: style,
+    italicAngle: -(config.slant ?? 0),
     unitsPerEm: UNITS_PER_EM,
     ascender,
     descender,
@@ -634,7 +820,13 @@ function buildFontWithHints(
     panose: panose(config),
     // USE_TYPO_METRICS: without it a line of Brutalita is a different height on
     // Windows than on macOS, because the two read different metric pairs.
-    fsSelection: (config.weight >= 600 ? FS_BOLD : FS_REGULAR) | FS_USE_TYPO_METRICS,
+    // Bold only where the style is filed as one (see styleLink): a bit set on
+    // every heavy weight makes them all claim to be the family's bold.
+    fsSelection:
+      (link.bold ? FS_BOLD : 0) |
+      (link.italic ? FS_ITALIC : 0) |
+      (link.bold || link.italic ? 0 : FS_REGULAR) |
+      FS_USE_TYPO_METRICS,
     tables: {
       // Both of these shipped as 0, which makes `text-decoration: underline`
       // a zero-thickness rule sitting on the baseline.
@@ -653,11 +845,36 @@ function buildFontWithHints(
   // opentype.js writes every name record it was not given as a single space, and
   // there is no option for "omit this one" — Brutalita has no trademark, so drop
   // name ID 7 rather than ship a blank or invent a claim.
+  //
+  // Names 1 and 2 are the four-style filing, 16 and 17 the real family and
+  // style. The unique ID is spelled out because opentype.js would otherwise
+  // derive it from names 1 and 2 ("Brutalita Light Regular").
+  const names = font.names as unknown as Record<
+    string,
+    Record<string, { en: string } | undefined> | undefined
+  >;
   for (const platform of ['unicode', 'macintosh', 'windows'] as const) {
-    delete (font.names as unknown as Record<string, Record<string, unknown>>)[
-      platform
-    ]?.trademark;
+    const records = names[platform];
+    if (!records) continue;
+    delete records.trademark;
+    records.fontFamily = { en: `${family} ${link.familySuffix}`.trim() };
+    records.fontSubfamily = { en: link.subfamily };
+    records.preferredFamily = { en: family };
+    records.preferredSubfamily = { en: style };
+    records.uniqueID = {
+      en: [designer, `${family} ${style}`].filter(Boolean).join(': '),
+    };
   }
+  // The CFF table carries a family, weight and full name of its own, which
+  // opentype.js also reads from names 1 and 2. Those are not subject to the
+  // four-style limit, so serialize them from the real ones.
+  const englishName = font.getEnglishName.bind(font);
+  font.getEnglishName = (name: string) =>
+    name === 'fontFamily'
+      ? family
+      : name === 'fontSubfamily'
+        ? style
+        : englishName(name);
 
   // opentype.js merges font.tables.os2 over its own defaults, which derive the
   // Windows clipping bounds from the outline bounding box. Use the same
@@ -669,19 +886,13 @@ function buildFontWithHints(
   os2.sTypoLineGap = 0;
   os2.usWinAscent = ascender;
   os2.usWinDescent = -descender;
+  // opentype.js defaults these to a 49-unit rule a quarter of the way up a
+  // 1000-unit em: `text-decoration: line-through` drew a hairline through the
+  // feet of the lowercase. A stem thick, centred on the x-height.
+  os2.yStrikeoutSize = stem;
+  os2.yStrikeoutPosition = Math.round((xHeight + stem) / 2);
 
-  const calculatedPairs = config.monospace
-    ? []
-    : calculateKerning(
-        built.map(
-          (entry): KerningGlyph<string> => ({
-            key: entry.char,
-            advanceWidth: entry.glyph.advanceWidth ?? 0,
-            contours: entry.contours,
-          })
-        ),
-        LATIN_KERNING_OPTIONS
-      );
+  const calculatedPairs = latinKerning(built.map(kerningGlyph), config);
   const glyphIndex = new Map(built.map((entry, index) => [entry.char, index + 1]));
   const charPairs: KerningPair<number>[] = calculatedPairs.map((pair) => ({
     left: glyphIndex.get(pair.left)!,
@@ -699,21 +910,76 @@ function buildFontWithHints(
     font,
     hints: { glyphs: glyphHints, private: privateHints(config) } as FontHints,
     kerning: charPairs,
+    link,
   };
 }
 
+// Offsets of the fields opentype.js derives on its own and offers no option
+// for: head.modified and head.macStyle, and the caret slope in hhea.
+const HEAD_CREATED = 20;
+const HEAD_MODIFIED = 28;
+const HEAD_MAC_STYLE = 44;
+/** LONGDATETIME counts from 1904-01-01; unix time counts from 1970-01-01. */
+const MAC_EPOCH_OFFSET = 2082844800;
+const HHEA_CARET_SLOPE_RISE = 18;
+const HHEA_CARET_SLOPE_RUN = 20;
+const CARET_RISE = 1000;
+
 /**
- * The .otf bytes a build ships: serialized, then completed with the CFF hints
- * and GPOS kerning tables OpenType.js cannot emit.
+ * head.macStyle has to agree with OS/2.fsSelection, and opentype.js sets its
+ * bold bit from the weight alone. It also stamps head.modified with the
+ * current time whatever head.created was given. An italic leans its text
+ * cursor to follow the letters, which opentype.js always writes upright.
+ */
+function finishHeaderTables(
+  input: Uint8Array,
+  link: { bold: boolean; italic: boolean },
+  slant = 0,
+  timestamp?: number
+): Uint8Array {
+  const macStyle = (link.bold ? 1 : 0) | (link.italic ? 2 : 0);
+  let bytes = patchSfntTable(input, 'head', (head) => {
+    head.setUint16(HEAD_MAC_STYLE, macStyle);
+    if (timestamp !== undefined) {
+      const stamp = BigInt(Math.round(timestamp) + MAC_EPOCH_OFFSET);
+      head.setBigInt64(HEAD_CREATED, stamp);
+      head.setBigInt64(HEAD_MODIFIED, stamp);
+    }
+  });
+  if (slant) {
+    bytes = patchSfntTable(bytes, 'hhea', (hhea) => {
+      hhea.setInt16(HHEA_CARET_SLOPE_RISE, CARET_RISE);
+      hhea.setInt16(
+        HHEA_CARET_SLOPE_RUN,
+        Math.round(CARET_RISE * slantFactor(slant))
+      );
+    });
+  }
+  return bytes;
+}
+
+/**
+ * The .otf bytes a build ships: serialized, then completed with what
+ * OpenType.js cannot emit — the CFF hints, the GPOS kerning table and the style
+ * fields of head and hhea.
  */
 export function buildFontBytes(
   definition: FontDefinition,
   config: FontConfig,
   options: BuildFontOptions = {}
 ): Uint8Array {
-  const { font, hints, kerning } = buildFontWithHints(definition, config, options);
+  const { font, hints, kerning, link } = buildFontWithHints(
+    definition,
+    config,
+    options
+  );
   const hinted = addHints(new Uint8Array(font.toArrayBuffer()), hints);
-  return addKerning(hinted, kerning);
+  return finishHeaderTables(
+    addKerning(hinted, kerning),
+    link,
+    config.slant,
+    options.createdTimestamp
+  );
 }
 
 export async function downloadFont(
@@ -727,5 +993,5 @@ export async function downloadFont(
   // touches `document` at module load, so import it lazily — that keeps this
   // module importable in Node (the CLI imports buildFont from here).
   const { downloadBlob } = await import('./blob-utils');
-  downloadBlob(fontFileName(config), bytes.slice().buffer);
+  downloadBlob(fontFileName(config), bytes.slice().buffer, 'font/otf');
 }

@@ -1,6 +1,9 @@
 import { memo } from 'react';
 
 import { MARK_ROWS } from '../compose';
+import { anchorEnds, cornerOptions, sharpPath, strokePath } from '../corners';
+import type { CornerStyle, StrokeStyle } from '../corners';
+import { slantFactor } from '../slant';
 import { SEGMENTS } from '../types';
 import type { CharLayers } from '../types';
 
@@ -16,6 +19,10 @@ export const Key = memo(function Key({
   color = 'white',
   fontSize = DEFAULT_FONT_SIZE,
   strokeWidth = DEFAULT_STROKE_WIDTH,
+  stroke,
+  corners,
+  cornerRadius,
+  slant = 0,
 }: {
   char?: string;
   path: CharLayers;
@@ -23,9 +30,15 @@ export const Key = memo(function Key({
   color?: string;
   fontSize?: number;
   strokeWidth?: number;
+  stroke?: StrokeStyle;
+  corners?: CornerStyle;
+  cornerRadius?: number;
+  slant?: number;
 }) {
   const WIDTH = 0.5 * fontSize;
   const HEIGHT = 1 * fontSize;
+  const shear = slantFactor(slant);
+  const curves = cornerOptions({ corners, cornerRadius }, HEIGHT / SEGMENTS[1]);
   const STROKEWIDTH = strokeWidth;
   const LOW_STEM_HEIGHT = Math.ceil(HEIGHT * 0.25);
   // Room above the cap line for the accent of a composed glyph ("Á"). The cell
@@ -43,6 +56,7 @@ export const Key = memo(function Key({
         marginRight: 4,
         marginTop: CELL_TOP_MARGIN - MARK_BAND,
         color,
+        overflow: 'visible' as const,
       }
     : {
         // Keep the enlarged 14px mono cell and skeleton fixed across weights.
@@ -58,22 +72,21 @@ export const Key = memo(function Key({
     return <div className="unknown-char key">{char}</div>;
   }
 
-  let dots: [number, number][] = [];
+  const dots: [number, number][] = [];
 
-  const pathMapped = finalPath.map((layer) =>
+  const pathGrid = finalPath.map((layer) =>
     layer.map(([x, y]) => {
       const coordX = Math.round((x * WIDTH) / SEGMENTS[0]);
       const coordY = Math.round((y * HEIGHT) / SEGMENTS[1]);
-
-      const coordStr = `${coordX},${coordY}`;
 
       if (layer.length === 1) {
         dots.push([coordX, coordY]);
       }
 
-      return coordStr;
+      return [coordX, coordY] as [number, number];
     })
   );
+  const pathMapped = curves ? anchorEnds(pathGrid, curves) : pathGrid;
 
   return (
     <svg
@@ -85,28 +98,33 @@ export const Key = memo(function Key({
       height={styles ? styles.height : undefined}
       style={styles}
     >
-      {pathMapped.map((line, lineIdx) => (
-        <polyline
-          key={lineIdx}
-          points={line.join(' ')}
-          strokeWidth={STROKEWIDTH}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-          stroke={color}
-        />
-      ))}
+      <g transform={shear ? `matrix(1 0 ${-shear} 1 ${HEIGHT * shear} 0)` : undefined}>
+        {stroke === 'sharp' && (
+          <path d={sharpPath(pathMapped, STROKEWIDTH / 2, curves)} fill={color} />
+        )}
+        {stroke !== 'sharp' && pathMapped.map((line, lineIdx) => (
+          <path
+            key={lineIdx}
+            d={strokePath(line, curves)}
+            strokeWidth={STROKEWIDTH}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect={shear ? undefined : 'non-scaling-stroke'}
+            fill="none"
+            stroke={color}
+          />
+        ))}
 
-      {dots.map((dotXY) => (
-        <circle
-          key={`${dotXY[0]}, ${dotXY[1]}`}
-          cx={dotXY[0]}
-          cy={dotXY[1]}
-          r={STROKEWIDTH * 0.75}
-          fill={color}
-        />
-      ))}
+        {stroke !== 'sharp' && dots.map((dotXY) => (
+          <circle
+            key={`${dotXY[0]}, ${dotXY[1]}`}
+            cx={dotXY[0]}
+            cy={dotXY[1]}
+            r={STROKEWIDTH * 0.75}
+            fill={color}
+          />
+        ))}
+      </g>
     </svg>
   );
 });
