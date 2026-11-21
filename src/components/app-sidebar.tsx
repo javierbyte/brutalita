@@ -7,13 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
-import { DEFAULT_CORNER_RADIUS, MAX_CORNER_RADIUS, MIN_CORNER_RADIUS } from '../corners';
+import { cornerOptions, DEFAULT_CORNER_RADIUS, MAX_CORNER_RADIUS, MIN_CORNER_RADIUS, strokePath } from '../corners';
 import type { CornerStyle, StrokeStyle } from '../corners';
 import type { FontConfigDispatch } from '../font-config';
 import { MAX_SLANT } from '../slant';
 import { resolveSpacing, SPACING_RANGES } from '../spacing';
 import type { SpacingKey } from '../spacing';
-import type { FontConfig } from '../types';
+import type { CharLayer, FontConfig } from '../types';
 import { SHIPPED_WEIGHTS, styleName } from '../weights';
 
 type AppSidebarProps = {
@@ -39,6 +39,8 @@ const SPACING_FIELDS: { key: SpacingKey; label: string; title: string }[] = [
     title: 'The most a pair such as "Ta" may be pulled together. 0 turns it off',
   },
 ];
+
+const SAMPLE_CORNER: CharLayer = [[3, 29], [3, 15], [15, 3], [41, 3]];
 
 const CORNER_FIELDS: { value: CornerStyle; label: string; title: string }[] = [
   { value: 'chamfer', label: 'Chamfer', title: 'Curves stay as the chamfers they are drawn as' },
@@ -112,6 +114,53 @@ function SliderField({
   );
 }
 
+// Every control that picks one of a few (the tabs, the two-way switches) is
+// one well with the dropdown's border and fill; the chosen option is a raised
+// tile inside it, so no line is brighter than the shell around it.
+const WELL = 'h-8 w-full rounded-md border border-input bg-background p-0.5';
+const TILE = 'h-full flex-1 rounded-[5px] text-xs font-normal text-muted-foreground';
+
+/** A two-way switch. */
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; title?: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <ToggleGroup
+      type="single"
+      spacing={0.5}
+      aria-label={label}
+      value={value}
+      onValueChange={(next) => {
+        if (next) onChange(next as T);
+      }}
+      className={WELL}
+    >
+      {options.map((option) => (
+        <ToggleGroupItem
+          key={option.value}
+          value={option.value}
+          title={option.title}
+          className={cn(
+            TILE,
+            'data-[state=off]:hover:bg-transparent data-[state=off]:hover:text-foreground',
+            'data-[state=on]:bg-input data-[state=on]:text-foreground data-[state=on]:hover:text-foreground'
+          )}
+        >
+          {option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
+
 export function AppSidebar({
   editorView,
   fontConfig,
@@ -128,10 +177,24 @@ export function AppSidebar({
   return (
     <Sidebar side="right" className="app-sidebar">
       <Tabs defaultValue="glyph" className="min-h-0 flex-1 gap-0">
-        <div className="p-2">
-          <TabsList className="w-full">
-            <TabsTrigger value="glyph">Glyph</TabsTrigger>
-            <TabsTrigger value="style">Style</TabsTrigger>
+        <div className="px-3 pt-3 pb-2">
+          <TabsList className={cn(WELL, 'group-data-[orientation=horizontal]/tabs:h-8')}>
+            {[
+              ['glyph', 'Glyph'],
+              ['style', 'Style'],
+            ].map(([value, label]) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className={cn(
+                  TILE,
+                  'dark:data-[state=active]:bg-input',
+                  'group-data-[variant=default]/tabs-list:data-[state=active]:shadow-none'
+                )}
+              >
+                {label}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </div>
 
@@ -174,63 +237,49 @@ export function AppSidebar({
             </Section>
 
             <Section title="Stroke">
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
+              <Segmented<StrokeStyle>
+                label="Stroke"
                 value={fontConfig.stroke ?? 'round'}
-                onValueChange={(value) => {
-                  if (value)
-                    fontConfigDispatch({
-                      type: 'change-stroke',
-                      payload: value as StrokeStyle,
-                    });
-                }}
-                className="w-full"
-              >
-                <ToggleGroupItem
-                  value="round"
-                  title="Round ends, corners and dots"
-                  className="flex-1 text-xs"
-                >
-                  Round
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="sharp"
-                  title="Flat ends, pointed corners and square dots"
-                  className="flex-1 text-xs"
-                >
-                  Sharp
-                </ToggleGroupItem>
-              </ToggleGroup>
+                options={[
+                  { value: 'round', label: 'Round', title: 'Round ends, corners and dots' },
+                  { value: 'sharp', label: 'Sharp', title: 'Flat ends, pointed corners and square dots' },
+                ]}
+                onChange={(payload) => fontConfigDispatch({ type: 'change-stroke', payload })}
+              />
             </Section>
 
             <Section title="Curves">
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
-                value={corners}
-                onValueChange={(value) => {
-                  if (value)
+              <div className="flex items-center gap-2">
+                <select
+                  aria-label="Curve style"
+                  title={CORNER_FIELDS.find(({ value }) => value === corners)?.title}
+                  value={corners}
+                  onChange={(event) =>
                     fontConfigDispatch({
                       type: 'change-corners',
-                      payload: value as CornerStyle,
-                    });
-                }}
-                className="w-full"
-              >
-                {CORNER_FIELDS.map(({ value, label, title }) => (
-                  <ToggleGroupItem
-                    key={value}
-                    value={value}
-                    title={title}
-                    className="flex-auto px-2 text-xs"
-                  >
-                    {label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
+                      payload: event.target.value as CornerStyle,
+                    })
+                  }
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-xs"
+                >
+                  {CORNER_FIELDS.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 44 32"
+                  className="h-8 w-11 shrink-0"
+                >
+                  <path
+                    d={strokePath(SAMPLE_CORNER, cornerOptions({ corners, cornerRadius }, 12))}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
               <SliderField
                 id="font-corner-radius"
                 label="Radius"
@@ -251,27 +300,17 @@ export function AppSidebar({
             </Section>
 
             <Section title="Width">
-              <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
+              <Segmented
+                label="Width"
                 value={fontConfig.monospace ? 'mono' : 'prop'}
-                onValueChange={(value) => {
-                  if (value)
-                    fontConfigDispatch({
-                      type: 'change-width',
-                      payload: value === 'mono',
-                    });
-                }}
-                className="w-full"
-              >
-                <ToggleGroupItem value="mono" className="flex-1 text-xs">
-                  Mono
-                </ToggleGroupItem>
-                <ToggleGroupItem value="prop" className="flex-1 text-xs">
-                  Proportional
-                </ToggleGroupItem>
-              </ToggleGroup>
+                options={[
+                  { value: 'mono', label: 'Mono' },
+                  { value: 'prop', label: 'Proportional' },
+                ]}
+                onChange={(value) =>
+                  fontConfigDispatch({ type: 'change-width', payload: value === 'mono' })
+                }
+              />
             </Section>
 
             <Section title="Spacing">

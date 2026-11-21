@@ -118,7 +118,7 @@ export function AppMenubar({
             >
               <Field label="Font name">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.name}
                   spellCheck={false}
                   onChange={(event) =>
@@ -132,7 +132,7 @@ export function AppMenubar({
 
               <Field label="Designer">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.designer ?? ''}
                   spellCheck={false}
                   onChange={(event) =>
@@ -146,7 +146,7 @@ export function AppMenubar({
 
               <Field label="Designer URL">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.designerURL ?? ''}
                   spellCheck={false}
                   onChange={(event) =>
