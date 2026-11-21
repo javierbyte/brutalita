@@ -5,13 +5,12 @@
 //
 // This stays a script rather than a plain CLI call because the banner text
 // interpolates the font's own name from its config.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 import { fontDisplayName } from '../src/font-maker';
-import { formatIssue, validateFontSource } from '../src/font-validate';
 import { renderTextToSVG } from '../src/svg-export';
+import { loadShippedFont } from './source';
 
-const FONT_JSON = 'src/font.json';
 const OUT = 'public/brutalita-cover.svg';
 
 const BACKGROUND = '#111';
@@ -19,17 +18,7 @@ const STROKE = '#fff';
 const PADDING = 72;
 const TARGET_WIDTH = 800; // match the previous cover's width
 
-// Through the validator, not JSON.parse: composed glyphs such as "Á" are only
-// layers once it has resolved them.
-const { ok, config, chars, errors } = validateFontSource(
-  JSON.parse(readFileSync(FONT_JSON, 'utf8'))
-);
-if (!ok) {
-  for (const issue of errors) {
-    process.stderr.write(`${formatIssue(issue, FONT_JSON)}\n`);
-  }
-  process.exit(1);
-}
+const { config, chars } = loadShippedFont();
 
 // The heading is filled from the font config so the banner tracks the version.
 const text = [
@@ -46,9 +35,7 @@ const text = [
 ].join('\n');
 
 const { svg, missing } = renderTextToSVG(chars, text, {
-  weight: config.weight,
-  height: config.height,
-  monospace: config.monospace, // src/font.json is proportional (monospace: false)
+  ...config,
   color: STROKE,
   padding: PADDING,
   background: BACKGROUND,

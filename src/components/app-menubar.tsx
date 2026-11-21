@@ -89,18 +89,6 @@ export function AppMenubar({
                 Brutalita is an experimental font and editor. Create and
                 download your own font.
               </p>
-              <p>
-                Built with{' '}
-                <a
-                  href="https://opentype.js.org/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  OpenType.js
-                </a>{' '}
-                to generate the .otf files.
-              </p>
             </div>
             <MenubarSeparator />
             {ABOUT_LINKS.map((link) => (

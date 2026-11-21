@@ -3,7 +3,7 @@ import test from 'node:test';
 import * as Opentype from 'opentype.js';
 
 import source from './font.json';
-import { buildFontBytes, fontKerning } from './font-maker';
+import { buildFontBytes, fontLayout } from './font-maker';
 import { fontConfigReducer } from './font-config';
 import { validateFontSource } from './font-validate';
 import { resolveSpacing } from './spacing';
@@ -40,11 +40,11 @@ test('spacing sets the letter gap and, unless overridden, the word gap', () => {
 
 test('kerning caps how far a pair closes, and zero writes no pairs', () => {
   const strongest = (kerning: number) =>
-    Math.min(0, ...fontKerning(chars, { ...proportional, kerning }).map((p) => p.value));
+    Math.min(0, ...fontLayout(chars, { ...proportional, kerning }).kerning.map((p) => p.value));
 
   assert.equal(strongest(80), -80);
   assert.equal(strongest(160), -160);
-  assert.deepEqual(fontKerning(chars, { ...proportional, kerning: 0 }), []);
+  assert.deepEqual(fontLayout(chars, { ...proportional, kerning: 0 }).kerning, []);
 });
 
 test('monospace ignores spacing', () => {
@@ -89,7 +89,7 @@ test('every proportional advance and kerning pair is a whole device pixel', () =
       const glyph = font.glyphs.get(i);
       assert.equal((glyph.advanceWidth ?? 0) % quantum, 0, `${weight} ${glyph.name}`);
     }
-    for (const pair of fontKerning(chars, { ...proportional, weight })) {
+    for (const pair of fontLayout(chars, { ...proportional, weight }).kerning) {
       assert.equal(Math.abs(pair.value % 80), 0);
     }
   }

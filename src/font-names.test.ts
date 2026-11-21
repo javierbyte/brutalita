@@ -6,7 +6,7 @@ import * as Opentype from 'opentype.js';
 import { buildFontBytes, fontMetrics } from './font-maker';
 import { validateFontSource } from './font-validate';
 import source from './font.json';
-import { glyphName } from './glyph-names';
+import { glyphName } from '../packages/otf-writer/src';
 import { SHIPPED_WEIGHTS, styleLink, styleName } from './weights';
 
 const { config, chars } = validateFontSource(source);

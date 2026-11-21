@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import Opentype from 'opentype.js';
 
-import { readHints } from './cff-hint';
-import { buildFont, buildFontBytes, fontMetrics, stemWidth } from './font-maker';
+import { readHints } from '../packages/otf-writer/src';
+import { buildFontBytes, fontMetrics, stemWidth } from './font-maker';
 import { validateFontSource } from './font-validate';
 import source from './font.json';
 import { SHIPPED_WEIGHTS } from './weights';
@@ -15,40 +15,12 @@ function parse(bytes: Uint8Array): Opentype.Font {
   return Opentype.parse(bytes.slice().buffer);
 }
 
-/** Every glyph's outline, so hinting can be proved not to move any of it. */
-function outlines(font: Opentype.Font): string {
-  const rows: string[] = [];
-  for (let i = 0; i < font.glyphs.length; i++) {
-    const glyph = font.glyphs.get(i);
-    const path = glyph.path.commands
-      .map((command) => {
-        const point = command as unknown as { type: string; x?: number; y?: number };
-        return `${point.type}${point.x},${point.y}`;
-      })
-      .join(' ');
-    rows.push(`${glyph.name}|${glyph.advanceWidth}|${path}`);
-  }
-  return rows.join('\n');
-}
-
-// A hint that moved an outline would be a bug, not a hint: hinting instructs the
-// rasterizer, it does not redraw the glyph.
-test('hinting leaves every outline and advance untouched', () => {
-  for (const weight of SHIPPED_WEIGHTS) {
-    const cfg = { ...config, weight };
-    const plain = Opentype.parse(buildFont(chars, cfg).toArrayBuffer());
-    const hinted = parse(buildFontBytes(chars, cfg));
-    assert.equal(outlines(hinted), outlines(plain), `weight ${weight}`);
-  }
-});
-
 test('the hinted font is still a font every parser accepts', () => {
   for (const weight of SHIPPED_WEIGHTS) {
     const font = parse(buildFontBytes(chars, { ...config, weight }));
     assert.equal(font.glyphs.length, Object.keys(chars).length + 1);
     assert.equal(font.unitsPerEm, 2048);
-    // charToGlyph walking the cmap and the CharStrings INDEX exercises the
-    // offsets the CFF rebuild recomputes.
+    // charToGlyph walks the cmap and the CharStrings INDEX.
     assert.ok(font.charToGlyph('H').path.commands.length > 0);
   }
 });

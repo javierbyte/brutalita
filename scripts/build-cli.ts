@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // Bundle the CLI into one self-contained file for publishing.
 //
-// Everything is inlined — opentype.js, polygon-clipping and src/font.json — so
+// Everything is inlined — polygon-clipping and src/font.json — so
 // the published package has no runtime dependencies and `pnpm dlx brutalita` is
 // a single download. The app's Next/React dependencies never enter the graph:
 // the CLI only reaches into the Node-safe half of src/ (font-maker, svg-export,

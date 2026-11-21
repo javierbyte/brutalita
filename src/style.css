@@ -34,8 +34,6 @@ html {
 
 :root {
   --topnav-height: 44px;
-  --separator-color: #444;
-  --topnav-button-height: 32px;
 }
 
 /*
@@ -180,22 +178,6 @@ svg {
   display: block;
   margin: 0;
 }
-.key {
-  color: white;
-  height: 22px;
-  margin-bottom: -4px;
-  margin-right: 4px;
-  margin-top: 12px;
-  width: 10px;
-}
-
-.unknown-char {
-  display: block;
-  line-height: 20px;
-  font-size: 24px;
-  color: red;
-}
-
 /* The character editor now lives inside the app-layer shadcn sidebar. */
 .editor-container {
   user-select: none;
@@ -244,11 +226,6 @@ svg {
   font-size: 12px;
 }
 
-.editor-char {
-  font-size: 64px;
-  color: #fff;
-}
-
 .editor-controls {
   position: absolute;
   right: 0;
@@ -284,10 +261,4 @@ svg {
 .editor-controls button:hover {
   background-color: #555;
   color: #fff;
-}
-
-.quick-links a {
-  color: #74b9ff;
-  padding: 8px;
-  text-decoration: none;
 }

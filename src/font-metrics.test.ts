@@ -7,7 +7,7 @@ import { MARK_ROWS } from './compose';
 import { buildFontBytes, fontMetrics } from './font-maker';
 import { DEFAULT_SPACING as KERNING } from './spacing';
 import { validateFontSource } from './font-validate';
-import { readHints } from './cff-hint';
+import { readHints } from '../packages/otf-writer/src';
 import { SHIPPED_WEIGHTS, styleName } from './weights';
 import source from './font.json';
 
@@ -22,8 +22,8 @@ test('Regular preserves the original design scale and natural spacing', () => {
   assert.equal(metrics.stem, 160);
   assert.equal(metrics.capHeight, 1440);
   assert.equal(metrics.monospaceAdvance, 1120);
-  assert.equal(metrics.ascender, 2104);
-  assert.equal(metrics.descender, -440);
+  assert.equal(metrics.ascender, 2080);
+  assert.equal(metrics.descender, -480);
   const font = parse(buildFontBytes(chars, { ...config, weight: 400, monospace: false }));
   const bearing = KERNING / 2;
   assert.equal(font.charToGlyph('H').advanceWidth, 800 + KERNING);

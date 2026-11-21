@@ -2,7 +2,7 @@
 // a PostScript identifier: letters, digits, "." and "_", not starting with a
 // digit. Naming a glyph after its own character breaks that for the space,
 // every digit and all punctuation, which validators reject and PDF writers
-// cannot map back to text. Kept free of opentype.js so anything can import it.
+// cannot map back to text.
 
 /** Adobe Glyph List names for the printable ASCII that is not a letter. */
 const ASCII_NAMES: Record<string, string> = {
@@ -52,12 +52,15 @@ const ASCII_NAMES: Record<string, string> = {
 };
 
 /**
- * The glyph name for a character: the letter itself for A–Z and a–z, the Adobe
- * name for the rest of ASCII, and the generic `uniXXXX` (`uXXXXX` beyond the
- * BMP) for everything else, which any consumer can turn back into a code point
- * without carrying the full glyph list.
+ * The glyph name for a character, given as a string or a code point: the
+ * letter itself for A–Z and a–z, the Adobe name for the rest of ASCII, and the
+ * generic `uniXXXX` (`uXXXXX` beyond the BMP) for everything else, which any
+ * consumer can turn back into a code point without carrying the full glyph
+ * list.
  */
-export function glyphName(char: string): string {
+export function glyphName(character: string | number): string {
+  const char =
+    typeof character === 'number' ? String.fromCodePoint(character) : character;
   if (/^[A-Za-z]$/.test(char)) return char;
   const ascii = ASCII_NAMES[char];
   if (ascii) return ascii;

@@ -5,7 +5,6 @@ import { test } from 'node:test';
 import Opentype from 'opentype.js';
 
 import {
-  buildFont,
   buildFontBytes,
   fontDisplayName,
   fontFileName,
@@ -46,9 +45,9 @@ function normalize(font: Opentype.Font) {
     });
   }
   return {
-    family: names.unicode?.fontFamily?.en,
-    style: names.unicode?.fontSubfamily?.en,
-    designer: names.unicode?.designer?.en,
+    family: names.windows?.fontFamily?.en,
+    style: names.windows?.fontSubfamily?.en,
+    designer: names.windows?.designer?.en,
     unitsPerEm: font.unitsPerEm,
     ascender: font.ascender,
     descender: font.descender,
@@ -71,15 +70,15 @@ const { config, chars } = validateFontSource(source);
 for (const weight of SHIPPED_WEIGHTS) {
   const style = styleName({ weight });
   test(`build reproduces public/font/Brutalita-${style}.otf`, () => {
-    const built = buildFont(chars, { ...config, weight });
+    const built = parse(Buffer.from(buildFontBytes(chars, { ...config, weight })));
     const reference = parse(readFileSync(`public/font/Brutalita-${style}.otf`));
-    assert.deepEqual(normalize(parse(built.toArrayBuffer())), normalize(reference));
+    assert.deepEqual(normalize(built), normalize(reference));
   });
 }
 
 // Sources exported before config.version existed must keep working untouched:
-// the field is optional, so they validate without complaint and opentype.js
-// supplies its own default for name ID 5.
+// the field is optional, so they validate without complaint and build as
+// version 0.1.
 test('a font source predating config.version still validates and builds', () => {
   const legacy = {
     config: {
@@ -103,13 +102,13 @@ test('a font source predating config.version still validates and builds', () => 
   );
   assert.equal(result.config.version, undefined);
 
-  const built = parse(buildFont(result.chars, result.config).toArrayBuffer());
+  const built = parse(Buffer.from(buildFontBytes(result.chars, result.config)));
   const names = built.names as unknown as Record<
     string,
     Record<string, Record<string, string>>
   >;
-  assert.equal(names.unicode.fontFamily.en, 'Brutalita v0.8');
-  assert.equal(names.unicode.version.en, 'Version 0.1');
+  assert.equal(names.windows.fontFamily.en, 'Brutalita v0.8');
+  assert.equal(names.windows.version.en, 'Version 0.1');
   assert.equal(built.glyphs.length, Object.keys(result.chars).length + 1);
 });
 
@@ -119,7 +118,7 @@ test('filenames and display names survive a missing version', () => {
   const legacy = { ...config, version: undefined };
   assert.equal(fontFileName(legacy), 'Brutalita-Regular.otf');
   assert.equal(fontDisplayName(legacy), 'Brutalita');
-  assert.equal(fontDisplayName(config), 'Brutalita v0.9.1');
+  assert.equal(fontDisplayName(config), 'Brutalita v0.10.0');
 });
 
 test('the same source and timestamp produce identical bytes', () => {
@@ -209,7 +208,7 @@ for (const weight of SHIPPED_WEIGHTS) {
   const style = styleName({ weight });
 
   test(`${style} outlines are on whole font units`, () => {
-    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    const font = parse(Buffer.from(buildFontBytes(chars, { ...config, weight })));
     for (let i = 0; i < font.glyphs.length; i++) {
       const glyph = font.glyphs.get(i);
       assert.ok(
@@ -230,7 +229,7 @@ for (const weight of SHIPPED_WEIGHTS) {
   // The stroke used to be offset in grid units before an anisotropic scale, so
   // "monoline" H came out with 160-unit stems and a 151-unit crossbar.
   test(`${style} draws stems and bars at the same width`, () => {
-    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    const font = parse(Buffer.from(buildFontBytes(chars, { ...config, weight })));
     const points = font
       .charToGlyph('H')
       .path.commands.map((command) => command as unknown as { x?: number; y?: number })
@@ -250,7 +249,7 @@ for (const weight of SHIPPED_WEIGHTS) {
 
 test('the baseline is 0 and the SVG skeleton stays fixed for every weight', () => {
   for (const weight of SHIPPED_WEIGHTS) {
-    const font = parse(buildFont(chars, { ...config, weight }).toArrayBuffer());
+    const font = parse(Buffer.from(buildFontBytes(chars, { ...config, weight })));
     const ys = font
       .charToGlyph('H')
       .path.commands.map((command) => (command as unknown as { y?: number }).y)
@@ -261,7 +260,7 @@ test('the baseline is 0 and the SVG skeleton stays fixed for every weight', () =
 });
 
 test('the tables a renderer reads are actually filled in', () => {
-  const font = parse(buildFont(chars, config).toArrayBuffer());
+  const font = parse(Buffer.from(buildFontBytes(chars, config)));
   const post = font.tables.post as unknown as Record<string, number>;
   const os2 = font.tables.os2 as unknown as Record<string, number | string>;
 
@@ -276,7 +275,7 @@ test('the tables a renderer reads are actually filled in', () => {
   assert.equal(os2.usWinAscent, font.ascender);
   assert.equal(os2.usWinDescent, -font.descender);
 
-  // opentype.js writes a single space for every name record it is not given.
+  // No name record is written blank.
   const names = font.names as unknown as Record<
     string,
     Record<string, Record<string, string>>

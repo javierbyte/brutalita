@@ -1,3 +1,17 @@
+# 0.10.0 — 2026-11-21
+
+- The `.otf` files are written by `packages/otf-writer`, a dependency-free
+  OpenType writer. Outlines, advances, hints and kerning are unchanged; the
+  files are about a quarter smaller, and the CLI bundle is 219 kB, down from
+  783 kB.
+- The line box is 2080 above the baseline and 480 below: `line-height: normal`
+  is exactly 1.25em.
+- Underline, subscript and superscript metrics sit on the 160-unit lattice.
+- Name records are written once, for Windows, and the fonts are OS/2 version 4.
+- A family name outside ASCII builds a valid font.
+- The editor redraws only the glyph that changed.
+- `pnpm fonts` builds both families, as OTF and WOFF2, in one script.
+
 # 0.9.1 — 2026-09-13
 
 - Added `↕`.

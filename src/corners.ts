@@ -12,6 +12,33 @@ const along = (p: Point, direction: Point, distance: number): Point => [
   p[0] + direction[0] * distance,
   p[1] + direction[1] * distance,
 ];
+const dot = (u: Point, v: Point) => u[0] * v[0] + u[1] * v[1];
+const cross = (u: Point, v: Point) => u[0] * v[1] - u[1] * v[0];
+const distance = (a: Point, b: Point) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+/** The unit direction of each segment of a polyline. */
+const directionsOf = (points: CharLayer): Point[] =>
+  points.slice(1).map((p, i): Point => {
+    const dx = p[0] - points[i][0], dy = p[1] - points[i][1];
+    const length = Math.hypot(dx, dy);
+    return [dx / length, dy / length];
+  });
+
+/** How far `p` is from the nearest point of a polyline. */
+const distanceToLine = (p: Point, line: CharLayer) =>
+  Math.min(...line.slice(1).map((b, i) => {
+    const a = line[i];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+  }));
+
+/** Twice the signed area of a closed ring. */
+export const shoelace = (ring: CharLayer) =>
+  ring.reduce((sum, [x, y], i) => {
+    const [nx, ny] = ring[(i + 1) % ring.length];
+    return sum + x * ny - nx * y;
+  }, 0);
 
 export const CORNER_STYLES = ['chamfer', 'round', 'continuous'] as const;
 /**
@@ -75,7 +102,7 @@ type Corner = { vertex: Point; u: Point; v: Point; bend: boolean; dIn: number; d
 
 /** Tangent length of an arc of radius 1 that turns from `u` to `v`. */
 const tangent = (u: Point, v: Point) => {
-  const turn = Math.acos(Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1])));
+  const turn = Math.acos(Math.max(-1, Math.min(1, dot(u, v))));
   return Math.tan(turn / 2);
 };
 
@@ -108,14 +135,13 @@ export function strokeCommands(layer: CharLayer, corners?: CornerOptions): Strok
     if (!closed && (i === 0 || i === n - 1)) return none;
     const before = ring[(i + n - 1) % n];
     const after = ring[(i + 1) % n];
-    const inLength = Math.hypot(p[0] - before[0], p[1] - before[1]);
-    const outLength = Math.hypot(after[0] - p[0], after[1] - p[1]);
+    const inLength = distance(before, p);
+    const outLength = distance(p, after);
     if (!inLength || !outLength) return none;
     const u: Point = [(p[0] - before[0]) / inLength, (p[1] - before[1]) / inLength];
     const v: Point = [(after[0] - p[0]) / outLength, (after[1] - p[1]) / outLength];
-    const cross = u[0] * v[1] - u[1] * v[0];
-    const dot = u[0] * v[0] + u[1] * v[1];
-    return { u, v, sign: Math.sign(cross), bend: Math.abs(cross) > 1e-8 && dot > MAX_BEND_DOT };
+    const turn = cross(u, v);
+    return { u, v, sign: Math.sign(turn), bend: Math.abs(turn) > 1e-8 && dot(u, v) > MAX_BEND_DOT };
   });
 
   // Pair up the two ends of each chamfer, shortest first so that the diagonal
@@ -132,12 +158,12 @@ export function strokeCommands(layer: CharLayer, corners?: CornerOptions): Strok
     if (!a.bend || !b.bend || a.sign !== b.sign) return [];
     if (Math.abs(dx) < epsilon || Math.abs(dy) < epsilon) return [];
     if (length > MAX_CHAMFER_STEPS * corners.unit) return [];
-    const cross = a.u[0] * b.v[1] - a.u[1] * b.v[0];
-    if (a.u[0] * b.v[0] + a.u[1] * b.v[1] < MIN_CHAMFER_DOT || Math.abs(cross) < 1e-8) return [];
+    const turn = cross(a.u, b.v);
+    if (dot(a.u, b.v) < MIN_CHAMFER_DOT || Math.abs(turn) < 1e-8) return [];
     // Where the straight coming in would meet the straight going out.
-    const t = (dx * b.v[1] - dy * b.v[0]) / cross;
+    const t = (dx * b.v[1] - dy * b.v[0]) / turn;
     const vertex = along(p, a.u, t);
-    const back = (vertex[0] - q[0]) * b.v[0] + (vertex[1] - q[1]) * b.v[1];
+    const back = dot([vertex[0] - q[0], vertex[1] - q[1]], b.v);
     if (t <= 0 || back >= 0) return [];
     return [{ i, j, length, vertex }];
   }).sort((a, b) => a.length - b.length);
@@ -170,7 +196,7 @@ export function strokeCommands(layer: CharLayer, corners?: CornerOptions): Strok
   list.forEach((corner, k) => {
     if (!closed && k === list.length - 1) return;
     const next = list[(k + 1) % list.length];
-    const length = Math.hypot(next.vertex[0] - corner.vertex[0], next.vertex[1] - corner.vertex[1]);
+    const length = distance(corner.vertex, next.vertex);
     const asked = corner.dOut + next.dIn;
     if (asked > length) {
       corner.dOut *= length / asked;
@@ -181,7 +207,7 @@ export function strokeCommands(layer: CharLayer, corners?: CornerOptions): Strok
   const commands: StrokeCommand[] = [];
   let pen: Point | undefined;
   const lineTo = (point: Point) => {
-    if (pen && Math.hypot(point[0] - pen[0], point[1] - pen[1]) < epsilon) return;
+    if (pen && distance(pen, point) < epsilon) return;
     commands.push({ type: pen ? 'L' : 'M', point });
     pen = point;
   };
@@ -254,10 +280,10 @@ function trace(layer: CharLayer, corners: CornerOptions | undefined, tolerance: 
   const flatten = (a: Point, b: Point, c: Point, d: Point, depth = 0) => {
     const dx = d[0] - a[0], dy = d[1] - a[1];
     const length = Math.hypot(dx, dy);
-    const distance = (p: Point) => length
+    const offChord = (p: Point) => length
       ? Math.abs(dx * (a[1] - p[1]) - (a[0] - p[0]) * dy) / length
       : Math.hypot(p[0] - a[0], p[1] - a[1]);
-    if (depth >= 16 || Math.max(distance(b), distance(c)) <= tolerance) {
+    if (depth >= 16 || Math.max(offChord(b), offChord(c)) <= tolerance) {
       append(d, false);
       return;
     }
@@ -272,7 +298,11 @@ function trace(layer: CharLayer, corners: CornerOptions | undefined, tolerance: 
       hard[hard.length - 1] = false;
       flatten(points[points.length - 1], command.control1, command.control2, command.point);
     } else if (command.type === 'Z') {
-      if (same(points[points.length - 1], points[0])) hard[0] &&= hard.pop()!, points.pop();
+      // The closing point is the first one again: fold its flag into the first.
+      if (same(points[points.length - 1], points[0])) {
+        hard[0] &&= hard.pop()!;
+        points.pop();
+      }
       points.push(points[0]);
       hard.push(hard[0]);
     } else {
@@ -294,13 +324,6 @@ export function flattenStroke(layer: CharLayer, corners: CornerOptions, toleranc
  */
 export function anchorEnds(layers: CharLayer[], corners: CornerOptions): CharLayer[] {
   const epsilon = corners.unit * 1e-6;
-  const toSegment = (p: Point, a: Point, b: Point) => {
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
-    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
-  };
-  const off = (p: Point, line: CharLayer) =>
-    Math.min(...line.slice(1).map((b, i) => toSegment(p, line[i], b)));
   const curves = layers.map((layer) =>
     strokeCommands(layer, corners).some((c) => c.type === 'C')
       ? flattenStroke(layer, corners, corners.unit / 200)
@@ -311,22 +334,22 @@ export function anchorEnds(layers: CharLayer[], corners: CornerOptions): CharLay
     let moved = layer;
     for (const [end, neighbour] of [[0, 1], [layer.length - 1, layer.length - 2]]) {
       const p = layer[end], q = layer[neighbour];
-      const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      const length = distance(p, q);
       if (!length) continue;
       const direction: Point = [(q[0] - p[0]) / length, (q[1] - p[1]) / length];
       layers.forEach((other, otherIndex) => {
         const curve = curves[otherIndex];
         if (otherIndex === index || !curve) return;
-        if (off(p, other) > epsilon || off(p, curve) <= corners.unit / 100) return;
+        if (distanceToLine(p, other) > epsilon || distanceToLine(p, curve) <= corners.unit / 100) return;
         // Nearest crossing of this end's own line with the curve, either way.
         let best: number | undefined;
         for (let i = 1; i < curve.length; i++) {
           const a = curve[i - 1], b = curve[i];
           const ex = b[0] - a[0], ey = b[1] - a[1];
-          const cross = direction[0] * ey - direction[1] * ex;
-          if (Math.abs(cross) < 1e-12) continue;
-          const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / cross;
-          const w = ((a[0] - p[0]) * direction[1] - (a[1] - p[1]) * direction[0]) / cross;
+          const denominator = direction[0] * ey - direction[1] * ex;
+          if (Math.abs(denominator) < 1e-12) continue;
+          const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / denominator;
+          const w = ((a[0] - p[0]) * direction[1] - (a[1] - p[1]) * direction[0]) / denominator;
           if (w < 0 || w > 1 || t > Math.min(length, corners.unit) || t < -corners.unit) continue;
           if (best === undefined || Math.abs(t) < Math.abs(best)) best = t;
         }
@@ -398,10 +421,7 @@ export function sharpPieces(
         ring = clipped;
       }
     }
-    const area = ring.reduce((sum, [x, y], i) => {
-      const [nx, ny] = ring[(i + 1) % ring.length];
-      return sum + x * ny - nx * y;
-    }, 0);
+    const area = shoelace(ring);
     if (ring.length >= 3 && Math.abs(area) > 1e-12) pieces.push(area < 0 ? ring.reverse() : ring);
   };
 
@@ -412,11 +432,7 @@ export function sharpPieces(
   }
 
   const closed = points.length > 3 && same(points[0], points[points.length - 1]);
-  const directions = points.slice(1).map((p, i): Point => {
-    const dx = p[0] - points[i][0], dy = p[1] - points[i][1];
-    const length = Math.hypot(dx, dy);
-    return [dx / length, dy / length];
-  });
+  const directions = directionsOf(points);
   const cap = (p: Point, d: Point) => {
     const n: Point = [-d[1] * half, d[0] * half];
     const far = along(p, d, 2 * half);
@@ -424,21 +440,20 @@ export function sharpPieces(
       [far[0] + n[0], far[1] + n[1]], [far[0] - n[0], far[1] - n[1]]], p);
   };
   const join = (p: Point, u: Point, v: Point) => {
-    const cross = u[0] * v[1] - u[1] * v[0];
-    const dot = u[0] * v[0] + u[1] * v[1];
-    if (dot < -0.999999) return cap(p, u);
-    if (Math.abs(cross) < 1e-9) return;
+    const turn = cross(u, v);
+    if (dot(u, v) < -0.999999) return cap(p, u);
+    if (Math.abs(turn) < 1e-9) return;
     // Normals on the outside of the turn, and where their offset lines meet.
-    const side = cross > 0 ? 1 : -1;
+    const side = turn > 0 ? 1 : -1;
     const n1: Point = [u[1] * side, -u[0] * side];
     const n2: Point = [v[1] * side, -v[0] * side];
-    const reach = half / (1 + n1[0] * n2[0] + n1[1] * n2[1]);
+    const reach = half / (1 + dot(n1, n2));
     push([p, along(p, n1, half), [p[0] + (n1[0] + n2[0]) * reach, p[1] + (n1[1] + n2[1]) * reach],
       along(p, n2, half)], p);
   };
 
   // The outline already follows a flattened bend; it only rounds real turns.
-  const corner = (u: Point, v: Point) => !body || u[0] * v[0] + u[1] * v[1] < 0.9;
+  const corner = (u: Point, v: Point) => !body || dot(u, v) < 0.9;
   directions.forEach((d, i) => {
     const a = points[i], b = points[i + 1];
     const n: Point = [-d[1] * half, d[0] * half];
@@ -475,18 +490,12 @@ export function sharpGlyph(
   const skeletons = drawn.map((layer) =>
     corners ? flattenStroke(layer, corners, tolerance) : layer);
   const near = half / 5;
-  const apart = (p: Point, q: Point) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const lands = (p: Point, index: number) => skeletons.some((other, o) => {
     if (o === index || other.length < 2) return false;
     const first = other[0], last = other[other.length - 1];
     // Two ends that meet make a corner, and each needs its square to fill it.
-    if (!same(first, last) && (apart(p, first) < near || apart(p, last) < near)) return false;
-    return other.slice(1).some((b, i) => {
-      const a = other[i];
-      const dx = b[0] - a[0], dy = b[1] - a[1];
-      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
-      return apart(p, [a[0] + t * dx, a[1] + t * dy]) < near;
-    });
+    if (!same(first, last) && (distance(p, first) < near || distance(p, last) < near)) return false;
+    return distanceToLine(p, other) < near;
   });
   return drawn.flatMap((layer, index) => layer.length
     ? sharpPieces(layer, half, corners, tolerance,
@@ -513,11 +522,7 @@ export function strokeOutline(
   caps = true,
 ): CharLayer {
   if (points.length < 2) return [];
-  const directions = points.slice(1).map((p, i): Point => {
-    const dx = p[0] - points[i][0], dy = p[1] - points[i][1];
-    const length = Math.hypot(dx, dy);
-    return [dx / length, dy / length];
-  });
+  const directions = directionsOf(points);
   const arc = (p: Point, angle: number, turn: number): CharLayer => {
     const steps = Math.max(1, Math.ceil(Math.abs(turn) * circleSegments / (2 * Math.PI)));
     return Array.from({ length: steps + 1 }, (_, i): Point => [
@@ -530,20 +535,20 @@ export function strokeOutline(
     const v = directions[Math.min(i, directions.length - 1)];
     const n1: Point = [-u[1] * sign, u[0] * sign];
     const n2: Point = [-v[1] * sign, v[0] * sign];
-    const cross = u[0] * v[1] - u[1] * v[0];
-    const dot = u[0] * v[0] + u[1] * v[1];
+    const sine = cross(u, v);
+    const cosine = dot(u, v);
     // Two curves that meet tip to tip turn back by just under a half turn.
     // The offset lines of such a turn cross far away, so cap it like a
     // reversal on both sides instead of joining them.
-    const reversal = dot < -0.99;
-    if (cross * sign < -1e-10 || reversal) {
-      let turn = Math.atan2(cross, dot);
+    const reversal = cosine < -0.99;
+    if (sine * sign < -1e-10 || reversal) {
+      let turn = Math.atan2(sine, cosine);
       if (reversal && turn * sign >= 0) turn -= sign * 2 * Math.PI;
       return arc(p, Math.atan2(n1[1], n1[0]), turn);
     }
     return [[
-      p[0] + radius * (n1[0] + n2[0]) / (1 + dot),
-      p[1] + radius * (n1[1] + n2[1]) / (1 + dot),
+      p[0] + radius * (n1[0] + n2[0]) / (1 + cosine),
+      p[1] + radius * (n1[1] + n2[1]) / (1 + cosine),
     ]];
   });
   const first = directions[0], last = directions[directions.length - 1];

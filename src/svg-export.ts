@@ -1,18 +1,17 @@
 import { SCALE_X, fontLayout, stemWidth } from './font-maker';
+import type { GeometryConfig } from './font-maker';
 import { kerningMap, pairKey } from './kerning';
 import { anchorEnds, cornerOptions, sharpPath, strokePath } from './corners';
-import type { CornerStyle, StrokeStyle } from './corners';
 import { SEGMENTS } from './types';
-import type { FontDefinition, FontWeightType } from './types';
+import type { FontDefinition } from './types';
 import { editorStrokeWidth } from './weights';
 import { slantFactor } from './slant';
 
-// Render brutalita text to a single, self-contained SVG of single-line strokes —
-// the same look as the editor preview (src/components/key.tsx + .key/.type in
-// src/style.css), not the filled outlines used for the .otf export.
+// Render brutalita text to a single, self-contained SVG of single-line strokes,
+// not the filled outlines used for the .otf export.
 
-// Editor glyph scale: a 16px cell. WIDTH/HEIGHT and the coord mapping mirror
-// `Key` exactly (cx = round(x * WIDTH / SEGMENTS[0]), cy = round(y * HEIGHT / SEGMENTS[1])).
+// Glyph scale: a 16px cell, with coordinates rounded onto whole pixels of it
+// (src/components/key.tsx draws the editor's preview glyph the same way).
 const EDITOR_FONT_SIZE = 16;
 const WIDTH = 0.5 * EDITOR_FONT_SIZE;
 const HEIGHT = 1 * EDITOR_FONT_SIZE;
@@ -29,34 +28,18 @@ const LINE_HEIGHT = 30;
 // units) spans WIDTH px, so FONT_UNITS_PER_PX converts those metrics to px.
 const FONT_UNITS_PER_PX = SCALE_X / WIDTH; // 640 / 8 = 80
 
-export type SvgExportOptions = {
+/**
+ * The font configuration to draw with — weight (400), height (2), pen, corners,
+ * slant and spacing all mean what they do in a font source — plus how to
+ * present the result. `monospace` defaults to fixed pitch; when `false`, glyphs
+ * are spaced and kerned exactly as the proportional font built from the same
+ * options would be.
+ */
+export type SvgExportOptions = Partial<GeometryConfig> & {
   padding?: number;
   color?: string;
   /** Overrides the weight-derived stroke width. */
   strokeWidth?: number;
-  /** Used to derive the default stroke width when `strokeWidth` is omitted. */
-  weight?: FontWeightType;
-  /** Font aspect ratio used by the shared optical kerning calculation. */
-  height?: number;
-  /** Pen, corner style and curve size, matching the font configuration. */
-  stroke?: StrokeStyle;
-  corners?: CornerStyle;
-  cornerRadius?: number;
-  /** Rightward italic angle in degrees, matching the font configuration. */
-  slant?: number;
-  /**
-   * Fixed pitch (default) or proportional spacing. When `false`, glyphs are
-   * spaced and kerned exactly as the proportional font built from the same
-   * options would be.
-   */
-  monospace?: boolean;
-  /**
-   * Proportional spacing in font units, matching the font configuration:
-   * letter gap, space advance, and the most a kerning pair may close.
-   */
-  spacing?: number;
-  wordSpacing?: number;
-  kerning?: number;
   /**
    * Paint a rect of this colour behind the text, covering the whole viewBox.
    * Default: no background, so the SVG stays transparent.
@@ -118,18 +101,7 @@ export function renderTextToSVG(
             .filter((char) => definition[char])
             .map((char) => [char, definition[char]])
         ),
-        {
-          weight,
-          height,
-          monospace,
-          stroke: options.stroke,
-          corners: options.corners,
-          cornerRadius: options.cornerRadius,
-          slant: options.slant,
-          spacing: options.spacing,
-          wordSpacing: options.wordSpacing,
-          kerning: options.kerning,
-        }
+        { ...options, weight, height, monospace }
       );
   const kern = kerningMap(layout?.kerning ?? []);
   // The font spaces glyphs by the stroke its weight draws. A stroke-width
@@ -179,20 +151,15 @@ export function renderTextToSVG(
 
     [...line].forEach((char, colIdx) => {
       const layers = definition[char];
+      // Unknown glyph: advance the cell but draw nothing (' ' is expected blank).
+      if (!layers && char !== ' ') missingSet.add(char);
 
       // Map this glyph's layers to local px (origin at grid column 0).
-      const localLayers: [number, number][][] = [];
-      if (layers) {
-        for (const layer of layers) {
-          if (!layer.length) continue;
-          localLayers.push(
-            layer.map(([x, y]): [number, number] => [mapX(x), mapY(y)])
-          );
-        }
-      } else if (char !== ' ') {
-        // Unknown glyph: advance the cell but draw nothing (' ' is expected blank).
-        missingSet.add(char);
-      }
+      const localLayers = (layers ?? [])
+        .filter((layer) => layer.length)
+        .map((layer) =>
+          layer.map(([x, y]): [number, number] => [mapX(x), mapY(y)])
+        );
 
       // Resolve the cell's x origin: fixed pitch, or the font's own advance,
       // skeleton position and kerning. Blank/unknown glyphs advance by a space.
@@ -246,22 +213,12 @@ export function renderTextToSVG(
     }
   });
 
-  let viewX: number;
-  let viewY: number;
-  let viewW: number;
-  let viewH: number;
-  if (Number.isFinite(minX)) {
-    viewX = minX - horizontalInkPad - padding;
-    viewY = minY - inkPad - padding;
-    viewW = maxX - minX + 2 * (horizontalInkPad + padding);
-    viewH = maxY - minY + 2 * (inkPad + padding);
-  } else {
-    // Empty / all-blank text: just an empty padded canvas.
-    viewX = 0;
-    viewY = 0;
-    viewW = 2 * padding;
-    viewH = 2 * padding;
-  }
+  // Empty / all-blank text: just an empty padded canvas.
+  const inked = Number.isFinite(minX);
+  const viewX = inked ? minX - horizontalInkPad - padding : 0;
+  const viewY = inked ? minY - inkPad - padding : 0;
+  const viewW = inked ? maxX - minX + 2 * (horizontalInkPad + padding) : 2 * padding;
+  const viewH = inked ? maxY - minY + 2 * (inkPad + padding) : 2 * padding;
 
   // The canvas fits the ink tightly; `width` scales the drawn size without
   // touching the viewBox, and `background` fills that same box.

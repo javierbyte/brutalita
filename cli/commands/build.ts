@@ -6,7 +6,7 @@ import type { FontConfig } from '../../src/types';
 import { styleName } from '../../src/weights';
 
 import { UsageError } from '../args';
-import type { CommandSpec } from '../args';
+import type { CommandSpec, ValuesOf } from '../args';
 import { GLOBAL_OPTIONS } from '../context';
 import type { CommandContext } from '../context';
 import { isStdout, writeOutput, writeStdout } from '../io';
@@ -103,22 +103,7 @@ export const spec = {
   ],
 } satisfies CommandSpec;
 
-/** The subset of parsed flags this command reads. */
-export type Values = {
-  out?: string;
-  'out-dir'?: string;
-  filename?: string;
-  'no-clobber'?: boolean;
-  'dry-run'?: boolean;
-  weight?: string;
-  mono?: boolean;
-  name?: string;
-  'style-name'?: string;
-  designer?: string;
-  'designer-url'?: string;
-  timestamp?: string;
-  strict?: boolean;
-};
+export type Values = ValuesOf<typeof spec>;
 
 type Output = {
   path: string;
@@ -161,57 +146,37 @@ export function run(
     const config: FontConfig = { ...baseConfig, weight };
     const style = styleName(config);
 
-    const bytes: Buffer = Buffer.from(
-      buildFontBytes(source.chars, config, { createdTimestamp })
-    );
+    const bytes = buildFontBytes(source.chars, config, { createdTimestamp });
+    const size = `${formatBytes(bytes.length)}, ${glyphCount} glyphs`;
 
+    let path = '-';
     if (toStdout) {
       if (!values['dry-run']) writeStdout(bytes);
       ctx.logger.debug(`wrote ${formatBytes(bytes.length)} to stdout`);
-      outputs.push({
-        path: '-',
-        weight,
-        style,
-        bytes: bytes.length,
-        glyphs: glyphCount,
-      });
-      continue;
-    }
-
-    const filename = renderFilename(
-      values.filename ?? DEFAULT_FILENAME,
-      config,
-      style,
-      'otf'
-    );
-    const path = values.out ?? join(values['out-dir'] ?? '.', filename);
-
-    if (values['no-clobber'] && existsSync(path)) {
-      throw new UsageError(`${path} already exists (--no-clobber)`);
-    }
-
-    if (values['dry-run']) {
-      ctx.logger.info(
-        `would write ${path} (${formatBytes(bytes.length)}, ${glyphCount} glyphs)`
-      );
     } else {
-      writeOutput(path, bytes);
-      ctx.logger.success(
-        `${path} ${ctx.logger.dim(
-          `(${formatBytes(bytes.length)}, ${glyphCount} glyphs, ${fontName(
-            config
-          )} ${style})`
-        )}`
+      const filename = renderFilename(
+        values.filename ?? DEFAULT_FILENAME,
+        config,
+        style,
+        'otf'
       );
+      path = values.out ?? join(values['out-dir'] ?? '.', filename);
+
+      if (values['no-clobber'] && existsSync(path)) {
+        throw new UsageError(`${path} already exists (--no-clobber)`);
+      }
+
+      if (values['dry-run']) {
+        ctx.logger.info(`would write ${path} (${size})`);
+      } else {
+        writeOutput(path, bytes);
+        ctx.logger.success(
+          `${path} ${ctx.logger.dim(`(${size}, ${fontName(config)} ${style})`)}`
+        );
+      }
     }
 
-    outputs.push({
-      path,
-      weight,
-      style,
-      bytes: bytes.length,
-      glyphs: glyphCount,
-    });
+    outputs.push({ path, weight, style, bytes: bytes.length, glyphs: glyphCount });
   }
 
   if (ctx.json) {

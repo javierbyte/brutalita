@@ -1,10 +1,11 @@
 import { formatIssue, validateFontSource } from '../../src/font-validate';
 import type { Issue } from '../../src/font-validate';
 
-import type { CommandSpec } from '../args';
+import type { CommandSpec, ValuesOf } from '../args';
 import { GLOBAL_OPTIONS, SourceError } from '../context';
 import type { CommandContext } from '../context';
 import { loadSource, writeStdout } from '../io';
+import { plural } from '../log';
 
 export const spec = {
   name: 'validate',
@@ -38,7 +39,7 @@ export const spec = {
   ],
 } satisfies CommandSpec;
 
-type Values = { strict?: boolean };
+type Values = ValuesOf<typeof spec>;
 
 type Report = {
   source: string;
@@ -47,10 +48,6 @@ type Report = {
   errors: Issue[];
   warnings: Issue[];
 };
-
-function describe(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
 
 export function run(
   values: Values,
@@ -80,15 +77,14 @@ export function run(
       ctx.logger.warn(formatIssue(issue, source.label));
     }
 
-    const counts = [
-      describe(result.errors.length, 'error'),
-      describe(result.warnings.length, 'warning'),
-    ].join(', ');
-
     if (result.ok && !result.warnings.length) {
-      ctx.logger.success(`${source.label} — ${describe(Object.keys(result.chars).length, 'glyph')}, no issues`);
+      ctx.logger.success(
+        `${source.label} — ${plural(Object.keys(result.chars).length, 'glyph')}, no issues`
+      );
     } else {
-      ctx.logger.info(`${source.label} — ${counts}`);
+      ctx.logger.info(
+        `${source.label} — ${plural(result.errors.length, 'error')}, ${plural(result.warnings.length, 'warning')}`
+      );
     }
   }
 
@@ -113,7 +109,7 @@ export function run(
 
   if (failed.length) {
     throw new SourceError(
-      `${describe(failed.length, 'source')} failed validation`
+      `${plural(failed.length, 'source')} failed validation`
     );
   }
   return 0;

@@ -34,41 +34,46 @@ export type KerningOptions<Key = number> = {
   includePair?: (left: Key, right: Key) => boolean;
 };
 
-type Profile = { left: number; right: number } | undefined;
+type Profile = { left: number; right: number };
 
-function bounds(contours: KerningGlyph['contours']) {
-  let minY = Infinity;
-  let maxY = -Infinity;
+/**
+ * Extreme filled-outline intersections with each horizontal sample row, where
+ * row `r` is the scanline at (r + 0.5) * sampleStep. Rows are shared by every
+ * glyph, so two profiles compare by row index.
+ */
+function profilesOf(contours: KerningGlyph['contours'], sampleStep: number) {
+  let firstRow = Infinity;
   for (const contour of contours) {
-    for (const [, y] of contour) {
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    }
+    for (const [, y] of contour) firstRow = Math.min(firstRow, y);
   }
-  return { minY, maxY };
-}
+  firstRow = Math.floor(firstRow / sampleStep);
 
-/** Extreme filled-outline intersections with a horizontal scanline. */
-function profileAt(contours: KerningGlyph['contours'], y: number): Profile {
-  let left = Infinity;
-  let right = -Infinity;
+  // Edge by edge rather than row by row: an edge only meets the few rows it
+  // spans, and a round cap is dozens of edges that each span one or none.
+  const rows: (Profile | undefined)[] = [];
   for (const contour of contours) {
     for (let i = 0; i < contour.length; i++) {
       const a = contour[i];
       const b = contour[(i + 1) % contour.length];
+      const low = Math.min(a[1], b[1]);
+      const high = Math.max(a[1], b[1]);
       // Half-open crossing avoids counting a vertex twice. Horizontal edges
       // are represented by the samples immediately above and below them.
-      if (!((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y))) continue;
-      const x = a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1]);
-      left = Math.min(left, x);
-      right = Math.max(right, x);
+      for (let row = Math.ceil(low / sampleStep - 0.5); ; row++) {
+        const y = (row + 0.5) * sampleStep;
+        if (y >= high) break;
+        const x = a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1]);
+        const profile = (rows[row - firstRow] ??= { left: x, right: x });
+        profile.left = Math.min(profile.left, x);
+        profile.right = Math.max(profile.right, x);
+      }
     }
   }
-  return Number.isFinite(left) ? { left, right } : undefined;
+  return { firstRow, rows };
 }
 
-function percentile(values: number[], position: number): number {
-  values.sort((a, b) => a - b);
+/** A percentile of values already in ascending order. */
+function percentile(values: Float64Array, position: number): number {
   const index = (values.length - 1) * position;
   const lower = Math.floor(index);
   const fraction = index - lower;
@@ -94,35 +99,36 @@ export function calculateKerning<Key>(
 
   const prepared = glyphs
     .filter((glyph) => glyph.contours.some((contour) => contour.length >= 3))
-    .map((glyph) => {
-      const { minY, maxY } = bounds(glyph.contours);
-      const samples = new Map<number, Exclude<Profile, undefined>>();
-      const first = Math.floor(minY / sampleStep) * sampleStep + sampleStep / 2;
-      for (let y = first; y < maxY; y += sampleStep) {
-        const profile = profileAt(glyph.contours, y);
-        if (profile) samples.set(y, profile);
-      }
-      return { glyph, samples };
-    });
+    .map((glyph) => ({ glyph, ...profilesOf(glyph.contours, sampleStep) }));
 
+  // One buffer for every pair's gaps: sorting a typed array is several times
+  // faster than a plain one, and this loop runs once per pair of glyphs.
+  const buffer = new Float64Array(
+    Math.max(0, ...prepared.map(({ rows }) => rows.length))
+  );
   const pairs: KerningPair<Key>[] = [];
   for (const left of prepared) {
     for (const right of prepared) {
       if (options.includePair?.(left.glyph.key, right.glyph.key) === false) continue;
-      const gaps: number[] = [];
-      for (const [y, leftProfile] of left.samples) {
-        const rightProfile = right.samples.get(y);
-        if (!rightProfile) continue;
-        gaps.push(
-          left.glyph.advanceWidth + rightProfile.left - leftProfile.right
-        );
+      let count = 0;
+      const end = Math.min(
+        left.firstRow + left.rows.length,
+        right.firstRow + right.rows.length
+      );
+      for (let row = Math.max(left.firstRow, right.firstRow); row < end; row++) {
+        const leftProfile = left.rows[row - left.firstRow];
+        const rightProfile = right.rows[row - right.firstRow];
+        if (!leftProfile || !rightProfile) continue;
+        buffer[count++] =
+          left.glyph.advanceWidth + rightProfile.left - leftProfile.right;
       }
-      if (gaps.length < 3) continue;
+      if (count < 3) continue;
+      const gaps = buffer.subarray(0, count).sort();
 
       // The lower quartile represents the part of the pair the eye reads as
       // its closest sustained corridor. A mean over-kerns shelves and bowls.
       const opticalGap = percentile(gaps, 0.25);
-      const closestGap = Math.min(...gaps);
+      const closestGap = gaps[0];
       const requested = options.targetGap - opticalGap;
       const safe = minimumClearance - closestGap;
       // Round the request, then hold it to the limits: rounding the limited
@@ -143,13 +149,14 @@ export function calculateKerning<Key>(
   return pairs;
 }
 
-/** Fast lookup for text layout; the separator cannot collide with numeric IDs. */
+/** Key of a pair in `kerningMap`; the separator cannot collide with numeric IDs. */
+export function pairKey(left: string | number, right: string | number): string {
+  return `${left}\0${right}`;
+}
+
+/** Fast lookup for text layout, by `pairKey`. */
 export function kerningMap<Key extends string | number>(
   pairs: readonly KerningPair<Key>[]
 ): Map<string, number> {
-  return new Map(pairs.map(({ left, right, value }) => [`${left}\0${right}`, value]));
-}
-
-export function pairKey(left: string | number, right: string | number): string {
-  return `${left}\0${right}`;
+  return new Map(pairs.map(({ left, right, value }) => [pairKey(left, right), value]));
 }

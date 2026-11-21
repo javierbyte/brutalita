@@ -2,7 +2,6 @@ import { watch as watchFile } from 'node:fs';
 
 import { UsageError } from '../args';
 import type { CommandSpec } from '../args';
-import { SourceError } from '../context';
 import type { CommandContext } from '../context';
 import { loadSource } from '../io';
 import * as build from './build';
@@ -32,7 +31,8 @@ export function run(
   ctx: CommandContext
 ): number {
   const source = loadSource(positionals[0]);
-  if (!source.path) {
+  const { path } = source;
+  if (!path) {
     throw new UsageError(
       'watch needs a file on disk — stdin and the bundled font cannot be watched'
     );
@@ -40,14 +40,10 @@ export function run(
 
   const rebuild = () => {
     try {
-      build.run(values, [source.path as string], ctx);
+      build.run(values, [path], ctx);
     } catch (err) {
       // Keep watching: a half-edited JSON file is the normal case here.
-      if (err instanceof SourceError || err instanceof UsageError) {
-        ctx.logger.error(err.message);
-      } else {
-        ctx.logger.error((err as Error).message);
-      }
+      ctx.logger.error((err as Error).message);
     }
   };
 
@@ -55,7 +51,7 @@ export function run(
   rebuild();
 
   let pending: NodeJS.Timeout | undefined;
-  watchFile(source.path, () => {
+  watchFile(path, () => {
     // Editors write in several steps; collapse the burst into one rebuild.
     if (pending) clearTimeout(pending);
     pending = setTimeout(() => {

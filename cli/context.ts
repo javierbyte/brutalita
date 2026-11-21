@@ -1,6 +1,5 @@
 // Everything a command needs beyond its own parsed flags. Split out so command
 // modules and the dispatcher can both import it without a cycle.
-import { UsageError } from './args';
 import type { OptionSpec } from './args';
 import type { Logger } from './log';
 
@@ -19,9 +18,5 @@ export const GLOBAL_OPTIONS = {
   'no-color': { type: 'boolean', desc: 'Disable coloured output' },
 } as const satisfies Record<string, OptionSpec>;
 
-export type GlobalOptions = typeof GLOBAL_OPTIONS;
-
 /** Commands signal a clean failure by throwing; the dispatcher maps it to exit 2. */
 export class SourceError extends Error {}
-
-export { UsageError };

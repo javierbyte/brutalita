@@ -6,7 +6,7 @@ import bundledSource from '../src/font.json';
 import { UsageError } from './args';
 
 /** Paths tried, in order, when no source argument is given. */
-export const SOURCE_LOOKUP = ['font.json', 'src/font.json'];
+const SOURCE_LOOKUP = ['font.json', 'src/font.json'];
 
 export type LoadedSource = {
   /** Parsed JSON, not yet validated. */
@@ -87,12 +87,8 @@ export function writeStdout(data: string | Uint8Array): void {
   process.stdout.write(data);
 }
 
-export function ensureDir(path: string): void {
-  mkdirSync(resolve(path), { recursive: true });
-}
-
 /** Expand the \n and \t escapes people type into a shell argument. */
-export function expandEscapes(text: string): string {
+function expandEscapes(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 }
 

@@ -1,18 +1,13 @@
-// Namespace import, not default: opentype.js ships only named ESM exports, so
-// a default import resolves through interop that the RSC bundler does not
-// apply. This form works for the CLI, the browser bundle and Server Components.
-import * as Opentype from 'opentype.js';
 import polygonClipping from 'polygon-clipping';
-import { addHints } from './cff-hint';
-import type { FontHints, GlyphHints, StemHint } from './cff-hint';
+import { glyphName, writeFont } from '../packages/otf-writer/src';
+import type { FontHints, GlyphSource, Stem } from '../packages/otf-writer/src';
 import { MARK_ROWS } from './compose';
-import { anchorEnds, cornerOptions, flattenStroke, sharpGlyph, strokeCommands, strokeOutline } from './corners';
-import { glyphName } from './glyph-names';
-import { addKerning } from './gpos';
+import { anchorEnds, cornerOptions, flattenStroke, sharpGlyph, shoelace, strokeCommands, strokeOutline } from './corners';
+import type { StrokeCommand } from './corners';
 import { calculateKerning } from './kerning';
-import type { KerningGlyph, KerningOptions, KerningPair } from './kerning';
-import { FontConfig, FontDefinition, FontWeightType } from './types';
-import { patchSfntTable } from './sfnt';
+import type { KerningPair } from './kerning';
+import { SEGMENTS } from './types';
+import type { CharLayers, FontConfig, FontDefinition, FontWeightType } from './types';
 import { strokeFraction, styleLink, styleName } from './weights';
 import { slantFactor } from './slant';
 import { PIXEL, resolveSpacing, sideBearings as splitBearings } from './spacing';
@@ -27,8 +22,7 @@ const CIRCLE_SEGMENTS = 64;
  * CHAR_Y + 1 the descender, and the rows above 0 are the mark band, where the
  * accent of a composed glyph such as "Á" sits.
  */
-const CHAR_X = 2;
-const CHAR_Y = 4;
+const [CHAR_X, CHAR_Y] = SEGMENTS;
 
 /** Font units spanned by the x grid, and the em those units sit in. */
 export const SCALE_X = 640;
@@ -57,34 +51,36 @@ function includeLatinKerningPair(left: string, right: string): boolean {
 const KERNING_MINIMUM_ADJUSTMENT = PIXEL;
 
 /**
- * The single kerning configuration. The OTF's GPOS table and the SVG renderer
- * both lay text out from this, so they must never drift apart.
+ * Pair adjustments for built glyphs; none for a monospace font. The OTF's GPOS
+ * table and the SVG renderer both lay text out from this, so they cannot drift
+ * apart.
  */
-function latinKerningOptions(config: GeometryConfig): KerningOptions<string> {
-  const { spacing, kerning } = resolveSpacing(config);
-  return {
-    targetGap: spacing,
-    sampleStep: 32,
-    minimumClearance: 96,
-    // Whole pixels, like every other advance: a pair that closed a fraction of
-    // one would knock the rest of its line off the pixel grid.
-    quantization: PIXEL,
-    minimumAdjustment: KERNING_MINIMUM_ADJUSTMENT,
-    maximumReduction: kerning,
-    includePair: includeLatinKerningPair,
-  };
-}
-
-/** Pair adjustments for already-built glyphs; none for a monospace font. */
 function latinKerning(
-  glyphs: KerningGlyph<string>[],
+  glyphs: BuiltGlyph[],
   config: GeometryConfig
 ): KerningPair<string>[] {
+  const { spacing, kerning } = resolveSpacing(config);
   // A cap below the smallest adjustment worth writing can produce no pair, so
   // skip measuring every combination just to discard them all.
-  if (config.monospace) return [];
-  if (resolveSpacing(config).kerning < KERNING_MINIMUM_ADJUSTMENT) return [];
-  return calculateKerning(glyphs, latinKerningOptions(config));
+  if (config.monospace || kerning < KERNING_MINIMUM_ADJUSTMENT) return [];
+  return calculateKerning(
+    glyphs.map(({ char, advance, contours }) => ({
+      key: char,
+      advanceWidth: advance,
+      contours,
+    })),
+    {
+      targetGap: spacing,
+      sampleStep: 32,
+      minimumClearance: 96,
+      // Whole pixels, like every other advance: a pair that closed a fraction
+      // of one would knock the rest of its line off the pixel grid.
+      quantization: PIXEL,
+      minimumAdjustment: KERNING_MINIMUM_ADJUSTMENT,
+      maximumReduction: kerning,
+      includePair: includeLatinKerningPair,
+    }
+  );
 }
 
 /**
@@ -123,26 +119,37 @@ export function stemWidth(weight: FontWeightType): number {
 }
 
 /** The SVG editor uses a fixed 14px advance on its 8px-wide skeleton. */
-export function monospaceAdvance(_weight: FontWeightType): number {
-  return (SCALE_X / 8) * 14;
-}
+const MONOSPACE_ADVANCE = (SCALE_X / 8) * 14;
 
 // Square font units. A period is some 40,000; a pixel at 16px is 3,900.
 const SLIVER_AREA = 32;
 
-type GeometryConfig = Pick<
-  FontConfig,
-  | 'weight'
-  | 'height'
-  | 'monospace'
-  | 'stroke'
-  | 'corners'
-  | 'cornerRadius'
-  | 'slant'
-  | 'spacing'
-  | 'wordSpacing'
-  | 'kerning'
->;
+/** The config fields that shape outlines and spacing; the rest only name it. */
+export const GEOMETRY_KEYS = [
+  'weight',
+  'height',
+  'monospace',
+  'stroke',
+  'corners',
+  'cornerRadius',
+  'slant',
+  'spacing',
+  'wordSpacing',
+  'kerning',
+] as const satisfies readonly (keyof FontConfig)[];
+
+export type GeometryConfig = Pick<FontConfig, (typeof GEOMETRY_KEYS)[number]>;
+
+/**
+ * Half a grid column, the step every design-grid position is a multiple of
+ * (see MONO_LATTICE_OFFSET). A Regular stem is exactly one.
+ */
+const LATTICE = 2 * PIXEL;
+
+/** Up to the next lattice line. */
+function toLattice(units: number): number {
+  return Math.ceil(units / LATTICE) * LATTICE;
+}
 
 function configToMetrics(config: GeometryConfig) {
   const stem = stemWidth(config.weight);
@@ -154,18 +161,21 @@ function configToMetrics(config: GeometryConfig) {
   const cap = row * CHAR_Y + stem;
   return {
     cap,
-    // Weight-independent layout metrics bound the supported grid, including
-    // oversized dots, with 64 units of clearance. These are not ink heights.
-    // The mark band is part of that grid: a line of accented capitals has to
-    // fit inside its own line box, as it does in every other Latin font, so
-    // the ascender carries it even though most text never reaches up there.
-    ascender:
-      row * (CHAR_Y + MARK_ROWS) + Math.ceil(stemWidth(900) * 1.25) + 64,
-    descender: -(row + Math.ceil(stemWidth(900) * 0.25) + 64),
+    // The line box bounds the supported grid at every weight, oversized dots
+    // included; these are not ink heights. The mark band is part of that grid:
+    // a line of accented capitals has to fit inside its own line box, as it
+    // does in every other Latin font, so the ascender carries it even though
+    // most text never reaches up there. Each edge is then taken out to the
+    // lattice, so the line box is whole pixels wherever the letters are: the
+    // shipped proportions give 2080 above the baseline and 480 below, and a
+    // `line-height: normal` of exactly 1.25em.
+    ascender: toLattice(
+      row * (CHAR_Y + MARK_ROWS) + Math.ceil(stemWidth(900) * 1.25)
+    ),
+    descender: -toLattice(row + Math.ceil(stemWidth(900) * 0.25)),
     stem,
     halfStem,
     row,
-    monospaceAdvance: monospaceAdvance(config.weight),
   };
 }
 
@@ -183,425 +193,284 @@ function gridToUnits(x: number, y: number, metrics: Metrics): [number, number] {
   ];
 }
 
-function polar2cartesian({
-  distance,
-  angle,
-}: {
-  distance: number;
-  angle: number;
-}) {
-  return {
-    x: distance * Math.cos(angle),
-    y: distance * Math.sin(angle),
-  };
+type Point = [number, number];
+
+/** Whether `p` sits strictly inside the segment a–b, on the design grid. */
+function insideSegment(p: Point, a: Point, b: Point): boolean {
+  const between = (axis: 0 | 1) =>
+    Math.min(a[axis], b[axis]) < p[axis] && Math.max(a[axis], b[axis]) > p[axis];
+  if (a[0] === b[0]) return p[0] === a[0] && between(1);
+  const progress = (p[0] - a[0]) / (b[0] - a[0]);
+  return progress * (b[1] - a[1]) === p[1] - a[1] && between(0);
 }
 
-function cartesian2polar({ x, y }: { x: number; y: number }) {
-  return {
-    distance: Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2)),
-    angle: Math.atan2(y, x),
-  };
+/** A round join or dot, as the polygon the union can take. */
+function circle([cx, cy]: Point, radius: number): Point[] {
+  return Array.from({ length: CIRCLE_SEGMENTS }, (_, i): Point => {
+    const angle = (2 * Math.PI * i) / CIRCLE_SEGMENTS;
+    return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+  });
 }
 
-type polygon = [number, number][];
+/** The config fields that shape the ink itself; the rest only position it. */
+const PEN_KEYS = [
+  'weight',
+  'height',
+  'stroke',
+  'corners',
+  'cornerRadius',
+] as const satisfies readonly (keyof GeometryConfig)[];
 
-function definePolygon() {
-  let multiPolygon: polygon[] = [];
-  let currentPolygon: polygon = [];
+/** A glyph's ink where the design grid puts it, before spacing and slant. */
+type Ink = {
+  /** Closed rings on whole font units. */
+  outline: Point[][];
+  /** Stems for the CFF hints, by the axis they run along. */
+  hStems: Stem[];
+  vStems: Stem[];
+  /**
+   * The span of the stroke itself, a stem wide around every skeleton point;
+   * none for a glyph with no points. Spacing is measured from this rather than
+   * from the ink: a dot is drawn half a stem wider than its stroke, and a
+   * curved corner sits inside the one it replaces, and neither may move the
+   * skeleton off the lattice.
+   */
+  span?: [number, number];
+};
+
+function drawInk(
+  layers: CharLayers,
+  config: GeometryConfig,
+  metrics: Metrics
+): Ink {
+  const { halfStem, stem } = metrics;
+  const toUnits = ([x, y]: Point) => gridToUnits(x, y, metrics);
+  const curves = cornerOptions(config, metrics.row);
+  const sharp = config.stroke === 'sharp';
+
+  // The editor keeps an empty layer ready for the next stroke.
+  const strokes = layers.filter((layer) => layer.length);
+  // Everything is drawn in font units, not grid units. The two axes are scaled
+  // differently (SCALE_X across CHAR_X columns, `row` down the rows), so a pen
+  // or a curve applied before the scale would come out elliptical.
+  const drawn = strokes.map((layer) => layer.map(toUnits));
+
+  // Rings whose union is the glyph's ink.
+  const rings: Point[][] = [];
+
+  // Stems for the CFF hints, taken from the skeleton rather than recovered from
+  // the outline: a segment that is axis-aligned in the design grid is a stem,
+  // and its width is the stroke. Diagonals and dots get none, which is correct —
+  // there is nothing for a rasterizer to snap them to.
+  const hStems: Stem[] = [];
+  const vStems: Stem[] = [];
+  const hintSegment = (a: Point, b: Point) => {
+    if (a[0] === b[0]) vStems.push({ edge: a[0] - halfStem, width: stem });
+    if (a[1] === b[1]) hStems.push({ edge: a[1] - halfStem, width: stem });
+  };
+  // Only the straight portions of a curved stroke, never its flattened bends.
+  const hintStraights = (commands: StrokeCommand[]) => {
+    let previous: Point | undefined;
+    for (const command of commands) {
+      if (command.type === 'Z') continue;
+      if (command.type === 'L' && previous) hintSegment(previous, command.point);
+      previous = command.point;
+    }
+  };
+
+  // The strokes still to be drawn by the plain round pen further down.
+  let plain = strokes;
+  if (sharp) {
+    for (const points of drawn) hintStraights(strokeCommands(points, curves));
+    // One ring per curved stroke, here and for the round pen below: as separate
+    // pieces its flattened bends are thousands of overlapping shapes and more
+    // near-coincident edges than polygon-clipping's sweep line survives.
+    const ring = (points: Point[]) =>
+      strokeOutline(points, halfStem, CIRCLE_SEGMENTS, false);
+    rings.push(...sharpGlyph(drawn, halfStem, curves, 0.5, ring));
+    plain = [];
+  } else if (curves) {
+    const anchored = anchorEnds(drawn, curves);
+    plain = strokes.filter((_, index) => {
+      const points = anchored[index];
+      const commands = strokeCommands(points, curves);
+      // A straight stroke whose end moved onto a curve has left the grid too.
+      if (points === drawn[index] && !commands.some((c) => c.type === 'C')) {
+        return true;
+      }
+      hintStraights(commands);
+      rings.push(
+        strokeOutline(flattenStroke(points, curves), halfStem, CIRCLE_SEGMENTS)
+      );
+      return false;
+    });
+  }
+
+  // The plain round pen: a rectangle along each segment…
+  for (const layer of plain) {
+    const points = layer.map(toUnits);
+    points.slice(1).forEach((b, i) => {
+      const a = points[i];
+      hintSegment(a, b);
+      const angle = Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.PI / 2;
+      const nx = halfStem * Math.cos(angle);
+      const ny = halfStem * Math.sin(angle);
+      rings.push([
+        [a[0] - nx, a[1] - ny],
+        [a[0] + nx, a[1] + ny],
+        [b[0] + nx, b[1] + ny],
+        [b[0] - nx, b[1] - ny],
+      ]);
+    });
+  }
+  // …a circle on every end and join, unless the point is buried inside another
+  // segment, and a larger circle for each dot, a layer of a single point.
+  const joins = new Map<string, Point>();
+  const dots = new Map<string, Point>();
+  for (const layer of plain) {
+    for (const point of layer) {
+      const buried = () =>
+        plain.some((other) =>
+          other.slice(1).some((b, i) => insideSegment(point, other[i], b))
+        );
+      if (layer.length === 1) dots.set(point.join(','), point);
+      else if (!buried()) joins.set(point.join(','), point);
+    }
+  }
+  for (const point of joins.values()) rings.push(circle(toUnits(point), halfStem));
+  for (const point of dots.values()) {
+    rings.push(circle(toUnits(point), halfStem * 1.5));
+  }
 
   // Corners are snapped to whole font units on the way in. polygon-clipping
   // 0.15 cannot reliably close a ring built from raw floats ("Unable to
   // complete output ring"), and integer input is what the sweep line needs to
   // agree with itself about which segments touch. Axis-aligned corners are
   // already integral here; this only bites on diagonals and circle vertices.
+  const union = polygonClipping.union(
+    rings.map((ring) => {
+      const snapped = ring.map(([x, y]): Point => [Math.round(x), Math.round(y)]);
+      return [[...snapped, snapped[0]]];
+    })
+  );
+
+  // The union's intersection vertices are fractional however clean its inputs
+  // were. Round them here rather than leave it to opentype.js on the way into
+  // the charstring, which made the final outline a property of the serializer.
+  const outline = union
+    .flat()
+    .map((ring) => ring.map(([x, y]): Point => [Math.round(x), Math.round(y)]))
+    // Offset joins can leave microscopic rings where their intersections round
+    // onto the same CFF coordinates, or where a curve grazes the stroke beside
+    // it. They have no representable ink.
+    .filter(
+      (ring) =>
+        !(curves || sharp) || Math.abs(shoelace(ring)) > 2 * SLIVER_AREA
+    );
+
+  const centres = drawn.flat().map(([x]) => x);
   return {
-    start(x: number, y: number) {
-      currentPolygon = [[Math.round(x), Math.round(y)]];
-    },
-    line(x: number, y: number) {
-      currentPolygon.push([Math.round(x), Math.round(y)]);
-    },
-    close() {
-      currentPolygon.push(currentPolygon[0]);
-      multiPolygon.push(currentPolygon);
-    },
-    getUnion() {
-      const arrMulti = multiPolygon.map((e) => [e]);
-      return polygonClipping.union(arrMulti);
-    },
+    outline,
+    hStems,
+    vStems,
+    span: centres.length
+      ? [Math.min(...centres) - halfStem, Math.max(...centres) + halfStem]
+      : undefined,
   };
 }
 
-function makeGlyph(char: string, path: polygon[] = [], config: GeometryConfig) {
+// The union is nine tenths of a build, and most rebuilds do not need it again:
+// a stroke drawn in the editor changes one glyph, and slant, spacing and family
+// only move ink that is already drawn. Layers are replaced, never mutated — by
+// the validator and by the editor alike — so the array itself identifies a
+// drawing, and the cache lives exactly as long as the drawing does.
+const inkCache = new WeakMap<CharLayers, { pen: string; ink: Ink }>();
+
+type BuiltGlyph = {
+  char: string;
+  advance: number;
+  /** The outline as the font has it: positioned in its advance and slanted. */
+  contours: Point[][];
+  hints: NonNullable<GlyphSource['hints']>;
+  /** Whether the glyph draws anything; a blank one advances like a space. */
+  blank: boolean;
+  /**
+   * Where the stroke through grid column 0 is centred, from the glyph's
+   * origin and before any slant: what a stroke renderer needs to put the
+   * skeleton exactly where the outline has it.
+   */
+  skeletonOrigin: number;
+};
+
+/** Every glyph of a font, drawn and spaced. */
+function buildGlyphs(
+  definition: FontDefinition,
+  config: GeometryConfig
+): BuiltGlyph[] {
   const metrics = configToMetrics(config);
-  const { halfStem, stem, monospaceAdvance } = metrics;
-  const shear = slantFactor(config.slant);
-  const glyphPolygon = definePolygon();
-
-  // Stems for the CFF hints, taken from the skeleton rather than recovered from
-  // the outline: a segment that is axis-aligned in the design grid is a stem,
-  // and its width is the stroke. Diagonals and dots get none, which is correct —
-  // there is nothing for a rasterizer to snap them to.
-  const hHints: StemHint[] = [];
-  const vHints: StemHint[] = [];
-
-  // clean path and layers from empty arrays
-  path = path
-    .filter((layer) => layer.length)
-    .map((layer) => layer.filter((coord) => coord.length));
-
-  // The span of the stroke itself, a stem wide around every skeleton point.
-  // Spacing is measured from this rather than from the ink: a dot is drawn
-  // half a stem wider than its stroke, and a curved corner
-  // sits inside the one it replaces, and neither may move the skeleton off the lattice.
-  let strokeMinX = Infinity;
-  let strokeMaxX = -Infinity;
-  for (const layer of path) {
-    for (const [x, y] of layer) {
-      const [centre] = gridToUnits(x, y, metrics);
-      strokeMinX = Math.min(strokeMinX, centre - halfStem);
-      strokeMaxX = Math.max(strokeMaxX, centre + halfStem);
-    }
-  }
-
-  const curves = cornerOptions(config, metrics.row);
-  const sharp = config.stroke === 'sharp';
-  if (sharp) {
-    const drawn = path.map((layer) => layer.map(([x, y]) => gridToUnits(x, y, metrics)));
-    drawn.forEach((units) => {
-      let previous: [number, number] | undefined;
-      for (const command of strokeCommands(units, curves)) {
-        if (command.type === 'Z') continue;
-        if (command.type === 'L' && previous) {
-          if (previous[0] === command.point[0] && previous[1] !== command.point[1]) {
-            vHints.push({ edge: previous[0] - halfStem, width: stem });
-          }
-          if (previous[1] === command.point[1] && previous[0] !== command.point[0]) {
-            hHints.push({ edge: previous[1] - halfStem, width: stem });
-          }
-        }
-        previous = command.point;
-      }
-    });
-    // As with the round pen, one ring per curved stroke: its flattened bends
-    // as separate pieces are more near-coincident edges than polygon-clipping's
-    // sweep line survives.
-    const ring = (points: [number, number][]) =>
-      strokeOutline(points, halfStem, CIRCLE_SEGMENTS, false);
-    for (const piece of sharpGlyph(drawn, halfStem, curves, 0.5, ring)) {
-      piece.forEach(([x, y], i) => {
-        if (i === 0) glyphPolygon.start(x, y);
-        else glyphPolygon.line(x, y);
-      });
-      glyphPolygon.close();
-    }
-    path = [];
-  } else if (curves) {
-    // Blend after scaling so the curve stays isotropic at any aspect ratio.
-    // One ring per curved stroke avoids thousands of overlapping capsules and
-    // near-coincident intersections in polygon-clipping's sweep line.
-    const drawn = path.map((layer) => layer.map(([x, y]) => gridToUnits(x, y, metrics)));
-    const anchored = anchorEnds(drawn, curves);
-    path = path.filter((_, index) => {
-      const units = anchored[index];
-      const commands = strokeCommands(units, curves);
-      // A straight stroke whose end moved onto a curve has left the grid too.
-      if (units === drawn[index] && !commands.some(c => c.type === 'C')) return true;
-      let previous: [number, number] | undefined;
-      for (const command of commands) {
-        if (command.type === 'Z') continue;
-        // Hint only the straight portions, never the flattened bend segments.
-        if (command.type === 'L' && previous) {
-          if (previous[0] === command.point[0] && previous[1] !== command.point[1]) {
-            vHints.push({ edge: previous[0] - halfStem, width: stem });
-          }
-          if (previous[1] === command.point[1] && previous[0] !== command.point[0]) {
-            hHints.push({ edge: previous[1] - halfStem, width: stem });
-          }
-        }
-        previous = command.point;
-      }
-      const outline = strokeOutline(flattenStroke(units, curves), halfStem, CIRCLE_SEGMENTS);
-      outline.forEach(([x, y], i) => {
-        if (i === 0) glyphPolygon.start(x, y);
-        else glyphPolygon.line(x, y);
-      });
-      glyphPolygon.close();
-      return false;
-    });
-  }
-
-  if (path.length) {
-    for (const layer of path) {
-      const dotTotal = layer.length;
-
-      let i = 0;
-      while (i < dotTotal - 1) {
-        // Expand the stroke in font units, not grid units. The two axes are
-        // scaled differently (SCALE_X across CHAR_X columns vs `row` down the
-        // rows), so offsetting before the scale drew an elliptical pen: stems
-        // came out 160 units wide while the bars they met were 151.
-        const [x1, y1] = gridToUnits(layer[i][0], layer[i][1], metrics);
-        const [x2, y2] = gridToUnits(layer[i + 1][0], layer[i + 1][1], metrics);
-
-        if (layer[i][0] === layer[i + 1][0]) {
-          vHints.push({ edge: x1 - halfStem, width: stem });
-        }
-        if (layer[i][1] === layer[i + 1][1]) {
-          hHints.push({ edge: y1 - halfStem, width: stem });
-        }
-
-        const polar = cartesian2polar({ x: x2 - x1, y: y2 - y1 });
-        const newCoord = polar2cartesian({
-          distance: halfStem,
-          angle: polar.angle - Math.PI / 2,
-        });
-
-        glyphPolygon.start(x1 - newCoord.x, y1 - newCoord.y);
-        glyphPolygon.line(x1 + newCoord.x, y1 + newCoord.y);
-        glyphPolygon.line(x2 + newCoord.x, y2 + newCoord.y);
-        glyphPolygon.line(x2 - newCoord.x, y2 - newCoord.y);
-
-        glyphPolygon.close();
-
-        i++;
-      }
-    }
-  }
-
-  let uniqueDots: { [key: string]: [number, number] } = {};
-  let uniqueCoords: { [key: string]: [number, number] } = {};
-  for (const layer of path) {
-    for (const coord of layer) {
-      // only one coord per layer means this is a dot
-      if (layer.length === 1) {
-        uniqueDots[coord.join(',')] = coord;
-      } else {
-        /* I'll try to find this point as an intersection of two different lines */
-        let found = false;
-
-        for (const layer of path) {
-          let i = 0;
-          while (i < layer.length - 1 && !found) {
-            const j = i + 1;
-
-            if (layer[i][0] === layer[j][0] && layer[j][0] === coord[0]) {
-              if (
-                Math.min(layer[i][1], layer[j][1]) < coord[1] &&
-                Math.max(layer[i][1], layer[j][1]) > coord[1]
-              ) {
-                found = true;
-              }
-            }
-
-            if (layer[i][1] === layer[j][1] && layer[j][1] === coord[1]) {
-              if (
-                Math.min(layer[i][0], layer[j][0]) < coord[0] &&
-                Math.max(layer[i][0], layer[j][0]) > coord[0]
-              ) {
-                found = true;
-              }
-            }
-
-            if (layer[i][1] !== layer[j][1] && layer[j][0] !== coord[0]) {
-              const diff0 = layer[j][0] - layer[i][0];
-              const diff1 = layer[j][1] - layer[i][1];
-
-              const progress0 = (coord[0] - layer[i][0]) / diff0;
-
-              if (progress0 * diff1 === coord[1] - layer[i][1]) {
-                if (
-                  Math.min(layer[i][0], layer[j][0]) < coord[0] &&
-                  Math.max(layer[i][0], layer[j][0]) > coord[0]
-                ) {
-                  found = true;
-                }
-              }
-            }
-            i++;
-          }
-        }
-
-        if (!found) uniqueCoords[coord.join(',')] = coord;
-      }
-    }
-  }
-
-  // Round joins and dots, likewise swept in font units so they stay circular.
-  const circle = (grid: [number, number], radius: number) => {
-    const [cx, cy] = gridToUnits(grid[0], grid[1], metrics);
-    let j = 0;
-    while (j < CIRCLE_SEGMENTS) {
-      const newCoord = polar2cartesian({
-        distance: radius,
-        angle: (2 * Math.PI * j) / CIRCLE_SEGMENTS,
-      });
-
-      // first point of the circle, move
-      if (j === 0) {
-        glyphPolygon.start(cx + newCoord.x, cy + newCoord.y);
-      } else {
-        glyphPolygon.line(cx + newCoord.x, cy + newCoord.y);
-      }
-      j++;
-    }
-    glyphPolygon.close();
-  };
-
-  for (const uniqueCoordKey of Object.keys(uniqueCoords)) {
-    circle(uniqueCoords[uniqueCoordKey], halfStem);
-  }
-  for (const dotCoordKey of Object.keys(uniqueDots)) {
-    circle(uniqueDots[dotCoordKey], halfStem * 1.5);
-  }
-
-  const unionPolygon = glyphPolygon.getUnion();
-
-  // Normalize every union ring once. Optical spacing consumes these contours
-  // before positioning, while the path writer below applies the chosen LSB.
-  const rawContours: [number, number][][] = [];
-  let globalMinX = Infinity;
-  let globalMaxX = -Infinity;
-  for (const polygon of unionPolygon) {
-    for (const ring of polygon) {
-      const contour = ring.map(([x, y]): [number, number] => [
-        Math.round(x),
-        Math.round(y),
-      ]);
-      if (curves || sharp) {
-        // Offset joins can leave microscopic rings where their intersections
-        // round onto the same CFF coordinates, or where a curve grazes the
-        // stroke beside it. They have no representable ink.
-        const area = contour.reduce((sum, [x, y], i) => {
-          const [nx, ny] = contour[(i + 1) % contour.length];
-          return sum + x * ny - nx * y;
-        }, 0) / 2;
-        if (Math.abs(area) <= SLIVER_AREA) continue;
-      }
-      rawContours.push(contour);
-      for (const [x] of contour) {
-        globalMinX = Math.min(globalMinX, x);
-        globalMaxX = Math.max(globalMaxX, x);
-      }
-    }
-  }
-
-  if (Number.isFinite(strokeMinX)) {
-    globalMinX = strokeMinX;
-    globalMaxX = strokeMaxX;
-  }
+  const { halfStem } = metrics;
+  const pen = PEN_KEYS.map((key) => config[key]).join();
 
   // Every proportional glyph keeps the same nominal bearing on both sides.
   // Brutalita is drawn almost entirely from vertical stems, so per-glyph
   // optical bearings had no true diagonal to act on and only tightened the
   // shelved letters (T, I, L, F). Optical spacing is pair kerning's job.
   const { spacing, wordSpacing } = resolveSpacing(config);
-  const sideBearings = config.monospace
-    ? { left: 0, right: 0 }
-    : splitBearings(spacing);
-  const remainingSpaceTranslation = config.monospace
-    ? MONO_LATTICE_OFFSET
-    : Number.isFinite(globalMinX)
-      ? sideBearings.left - globalMinX
-      : 0;
+  const bearings = splitBearings(spacing);
+  const shear = slantFactor(config.slant);
 
-  // Round here and nowhere else. The union's intersection vertices are
-  // fractional however clean its inputs were, and leaving them for opentype.js
-  // to round on the way into the charstring made the final outline a property
-  // of the serializer rather than of this build.
-  const tmpPath = new Opentype.Path();
-  const contours: [number, number][][] = [];
-  for (const ring of rawContours) {
-      const contour: [number, number][] = [];
-      ring.forEach(([x, y], index) => {
-        // Shear the finished outline about the skeleton's baseline, including
-        // round caps and dots. Advances stay fixed as the angle changes.
-        const px = Math.round(x + remainingSpaceTranslation + shear * (y - halfStem));
-        const py = y;
-        contour.push([px, py]);
-        if (index === 0) {
-          tmpPath.moveTo(px, py);
-        } else {
-          tmpPath.lineTo(px, py);
-        }
-      });
-      contours.push(contour);
-  }
+  return Object.keys(definition).map((char) => {
+    const layers = definition[char];
+    let cached = inkCache.get(layers);
+    if (cached?.pen !== pen) {
+      cached = { pen, ink: drawInk(layers, config, metrics) };
+      inkCache.set(layers, cached);
+    }
+    const { outline, hStems, vStems, span } = cached.ink;
+    const blank = outline.length === 0;
 
-  const xs = tmpPath.commands.map((command) => (command as { x: number }).x);
-  const baseDynamicSpacing = xs.length ? globalMaxX - globalMinX : 0;
-  const finalSpacing = config.monospace
-    ? monospaceAdvance
-    : char === ' ' || !xs.length
-      ? wordSpacing
-      : // To half a pixel, which is a whole device pixel on a 2x screen. The
-        // weights whose stem is not a whole number of them (500, 600, 800,
-        // 900) would otherwise push each following glyph off the lattice.
-        // Regular's stem is two whole pixels, so it needs no rounding at all.
-        Math.round(
-          (baseDynamicSpacing + sideBearings.left + sideBearings.right) /
-            (PIXEL / 2)
-        ) *
-        (PIXEL / 2);
+    const shift = config.monospace
+      ? MONO_LATTICE_OFFSET
+      : span
+        ? bearings.left - span[0]
+        : 0;
 
-  const tmpGlyph = new Opentype.Glyph({
-    name: glyphName(char),
-    unicode: char.codePointAt(0),
-    advanceWidth: finalSpacing,
-    path: tmpPath,
+    const advance = config.monospace
+      ? MONOSPACE_ADVANCE
+      : char === ' ' || blank || !span
+        ? wordSpacing
+        : // To half a pixel, which is a whole device pixel on a 2x screen. The
+          // weights whose stem is not a whole number of them (500, 600, 800,
+          // 900) would otherwise push each following glyph off the lattice.
+          // Regular's stem is two whole pixels, so it needs no rounding at all.
+          Math.round(
+            (span[1] - span[0] + bearings.left + bearings.right) / (PIXEL / 2)
+          ) *
+          (PIXEL / 2);
+
+    return {
+      char,
+      advance,
+      // Shear the finished outline about the skeleton's baseline, including
+      // round caps and dots. Advances stay fixed as the angle changes.
+      contours: outline.map((ring) =>
+        ring.map(([x, y]): Point => [
+          Math.round(x + shift + shear * (y - halfStem)),
+          y,
+        ])
+      ),
+      hints: {
+        // Horizontal stems stay put: the glyph only ever moves sideways.
+        h: hStems,
+        // Vertical ones move with it, and a slanted stem is not vertical.
+        v: config.slant
+          ? []
+          : vStems.map(({ edge, width }) => ({ edge: edge + shift, width })),
+      },
+      blank,
+      skeletonOrigin: CELL_BEARING + halfStem + shift,
+    };
   });
-
-  // Vertical stems move with the glyph's left side bearing; horizontal ones do
-  // not, since the translation is horizontal only.
-  const hints: GlyphHints = {
-    h: hHints,
-    // Slanted stems cannot use axis-aligned vertical CFF hints.
-    v: config.slant ? [] : vHints.map(({ edge, width }) => ({
-      edge: edge + remainingSpaceTranslation,
-      width,
-    })),
-  };
-
-  return {
-    char,
-    glyph: tmpGlyph,
-    hints,
-    contours,
-    /** Whether the glyph draws anything; a blank one advances like a space. */
-    blank: !xs.length,
-    /**
-     * Where the stroke through grid column 0 is centred, from the glyph's
-     * origin and before any slant: what a stroke renderer needs to put the
-     * skeleton exactly where the outline has it.
-     */
-    skeletonOrigin: CELL_BEARING + halfStem + remainingSpaceTranslation,
-  };
-}
-
-function kerningGlyph(built: ReturnType<typeof makeGlyph>): KerningGlyph<string> {
-  return {
-    key: built.char,
-    advanceWidth: built.glyph.advanceWidth ?? 0,
-    contours: built.contours,
-  };
-}
-
-/**
- * Calculate the proportional font's optical pair adjustments. Kept public so
- * non-font renderers can use exactly the same layout without knowing how the
- * algorithm measures outlines.
- */
-export function fontKerning(
-  definition: FontDefinition,
-  config: GeometryConfig
-): KerningPair<string>[] {
-  if (config.monospace) return [];
-  return latinKerning(
-    Object.keys(definition).map((char) =>
-      kerningGlyph(makeGlyph(char, definition[char], config))
-    ),
-    config
-  );
 }
 
 export type FontLayout = {
@@ -622,23 +491,20 @@ export function fontLayout(
   definition: FontDefinition,
   config: GeometryConfig
 ): FontLayout {
-  const built = Object.keys(definition).map((char) =>
-    makeGlyph(char, definition[char], config)
-  );
-  const glyphs: FontLayout['glyphs'] = new Map();
-  for (const entry of built) {
-    if (entry.blank) continue;
-    glyphs.set(entry.char, {
-      advance: entry.glyph.advanceWidth ?? 0,
-      skeletonOrigin: entry.skeletonOrigin,
-    });
-  }
+  const built = buildGlyphs(definition, config);
   return {
-    glyphs,
+    glyphs: new Map(
+      built
+        .filter((glyph) => !glyph.blank)
+        .map(({ char, advance, skeletonOrigin }) => [
+          char,
+          { advance, skeletonOrigin },
+        ])
+    ),
     spaceAdvance: config.monospace
-      ? monospaceAdvance(config.weight)
+      ? MONOSPACE_ADVANCE
       : resolveSpacing(config).wordSpacing,
-    kerning: latinKerning(built.map(kerningGlyph), config),
+    kerning: latinKerning(built, config),
   };
 }
 
@@ -674,7 +540,7 @@ export function fontMetrics(config: FontConfig) {
     row: metrics.row,
     /** Stroke width in font units, always a multiple of STEM_QUANTUM. */
     stem: metrics.stem,
-    monospaceAdvance: metrics.monospaceAdvance,
+    monospaceAdvance: MONOSPACE_ADVANCE,
     /**
      * How far the whole outline sits from where the skeleton alone would put
      * it, so a renderer working back to design coordinates can undo it.
@@ -712,21 +578,11 @@ function panose(config: FontConfig): number[] {
   ];
 }
 
-/**
- * OS/2 fsSelection bits. opentype.js exposes them as
- * `Font.prototype.fsSelectionValues` but @types/opentype.js declares neither
- * that nor a numeric `fsSelection` option, so the values live here.
- */
-const FS_ITALIC = 1;
-const FS_BOLD = 32;
-const FS_REGULAR = 64;
-const FS_USE_TYPO_METRICS = 128;
-
 export type BuildFontOptions = {
   /**
-   * Unix seconds written to head.created and, by buildFontBytes, to
-   * head.modified. Both default to "now", so two builds of an unchanged source
-   * differ; pinning them makes the bytes reproducible.
+   * Unix seconds written to head.created and head.modified. Both default to
+   * "now", so two builds of an unchanged source differ; pinning them makes the
+   * bytes reproducible.
    */
   createdTimestamp?: number;
 };
@@ -737,7 +593,7 @@ export type BuildFontOptions = {
  * overshoot to suppress — and being monoline there is a single stem width for
  * both axes.
  */
-function privateHints(config: FontConfig): FontHints['private'] {
+function privateHints(config: FontConfig): FontHints {
   const { cap, row, stem } = configToMetrics(config);
   return {
     // Baseline pair first, then the top zones, ascending.
@@ -748,238 +604,99 @@ function privateHints(config: FontConfig): FontHints['private'] {
     stemSnapH: [stem],
     stemSnapV: [stem],
     forceBold: config.weight >= 700,
+    // The outlines sit on exact integers, so a fuzz band would only let a
+    // near-miss coordinate get captured by a zone it does not belong to.
+    blueFuzz: 0,
   };
 }
 
-// Build the opentype.js Font. Pure and Node-safe (no DOM), so the CLI can import
-// it directly. `font.toArrayBuffer()` serializes it to .otf bytes — but prefer
-// `buildFontBytes`, which also writes the hints opentype.js cannot.
-export function buildFont(
-  definition: FontDefinition,
-  config: FontConfig,
-  options: BuildFontOptions = {}
-) {
-  return buildFontWithHints(definition, config, options).font;
-}
-
-function buildFontWithHints(
-  definition: FontDefinition,
-  config: FontConfig,
-  options: BuildFontOptions = {}
-) {
-  const metrics = configToMetrics(config);
-  const { ascender, descender, stem, monospaceAdvance } = metrics;
-
-  const notdefGlyph = new Opentype.Glyph({
-    name: '.notdef',
-    advanceWidth: monospaceAdvance,
-    path: new Opentype.Path(),
-  });
-
-  const built = Object.keys(definition).map((char) => {
-    return makeGlyph(char, definition[char], config);
-  });
-
-  const glyphs = [notdefGlyph, ...built.map((entry) => entry.glyph)];
-  // .notdef is empty, so it leads the hint list with nothing to snap.
-  const glyphHints: GlyphHints[] = [
-    { h: [], v: [] },
-    ...built.map((entry) => entry.hints),
-  ];
-
-  const designer = config.designer?.trim() || undefined;
-  const family = fontName(config);
-  const style = styleName(config);
-  const link = styleLink(config);
-  const xHeight = metrics.cap - metrics.row;
-
-  const font = new Opentype.Font({
-    familyName: family,
-    styleName: style,
-    italicAngle: -(config.slant ?? 0),
-    unitsPerEm: UNITS_PER_EM,
-    ascender,
-    descender,
-    // @types/opentype.js mistypes weightClass as string, but the runtime stores
-    // it directly as the numeric OS/2 usWeightClass.
-    weightClass: config.weight as unknown as string,
-    designer,
-    designerURL: config.designerURL?.trim() || undefined,
-    version: config.version?.trim()
-      ? `Version ${config.version.trim()}`
-      : undefined,
-    // Every name record opentype.js does not receive is written as a single
-    // space, and name ID 3 is built as `${manufacturer}: ${fullName}` — so
-    // leaving these unset shipped five junk records and a malformed unique ID.
-    copyright: `Copyright (c) 2021, Javier Bórquez`,
-    license: 'BSD 3-Clause License',
-    licenseURL: 'https://github.com/javierbyte/brutalita/blob/master/LICENSE',
-    manufacturer: designer,
-    manufacturerURL: config.designerURL?.trim() || undefined,
-    description: 'An experimental geometric font.',
-    panose: panose(config),
-    // USE_TYPO_METRICS: without it a line of Brutalita is a different height on
-    // Windows than on macOS, because the two read different metric pairs.
-    // Bold only where the style is filed as one (see styleLink): a bit set on
-    // every heavy weight makes them all claim to be the family's bold.
-    fsSelection:
-      (link.bold ? FS_BOLD : 0) |
-      (link.italic ? FS_ITALIC : 0) |
-      (link.bold || link.italic ? 0 : FS_REGULAR) |
-      FS_USE_TYPO_METRICS,
-    tables: {
-      // Both of these shipped as 0, which makes `text-decoration: underline`
-      // a zero-thickness rule sitting on the baseline.
-      post: {
-        underlinePosition: -Math.round(stem * 1.5),
-        underlineThickness: stem,
-        isFixedPitch: config.monospace ? 1 : 0,
-      },
-    },
-    ...(options.createdTimestamp !== undefined
-      ? { createdTimestamp: options.createdTimestamp }
-      : {}),
-    glyphs: glyphs,
-  } as unknown as ConstructorParameters<typeof Opentype.Font>[0]);
-
-  // opentype.js writes every name record it was not given as a single space, and
-  // there is no option for "omit this one" — Brutalita has no trademark, so drop
-  // name ID 7 rather than ship a blank or invent a claim.
-  //
-  // Names 1 and 2 are the four-style filing, 16 and 17 the real family and
-  // style. The unique ID is spelled out because opentype.js would otherwise
-  // derive it from names 1 and 2 ("Brutalita Light Regular").
-  const names = font.names as unknown as Record<
-    string,
-    Record<string, { en: string } | undefined> | undefined
-  >;
-  for (const platform of ['unicode', 'macintosh', 'windows'] as const) {
-    const records = names[platform];
-    if (!records) continue;
-    delete records.trademark;
-    records.fontFamily = { en: `${family} ${link.familySuffix}`.trim() };
-    records.fontSubfamily = { en: link.subfamily };
-    records.preferredFamily = { en: family };
-    records.preferredSubfamily = { en: style };
-    records.uniqueID = {
-      en: [designer, `${family} ${style}`].filter(Boolean).join(': '),
-    };
-  }
-  // The CFF table carries a family, weight and full name of its own, which
-  // opentype.js also reads from names 1 and 2. Those are not subject to the
-  // four-style limit, so serialize them from the real ones.
-  const englishName = font.getEnglishName.bind(font);
-  font.getEnglishName = (name: string) =>
-    name === 'fontFamily'
-      ? family
-      : name === 'fontSubfamily'
-        ? style
-        : englishName(name);
-
-  // opentype.js merges font.tables.os2 over its own defaults, which derive the
-  // Windows clipping bounds from the outline bounding box. Use the same
-  // padded bounds as the typographic layout metrics across both families.
-  const os2 = font.tables.os2 as unknown as Record<string, unknown>;
-  os2.achVendID = 'JVBY';
-  os2.sTypoAscender = ascender;
-  os2.sTypoDescender = descender;
-  os2.sTypoLineGap = 0;
-  os2.usWinAscent = ascender;
-  os2.usWinDescent = -descender;
-  // opentype.js defaults these to a 49-unit rule a quarter of the way up a
-  // 1000-unit em: `text-decoration: line-through` drew a hairline through the
-  // feet of the lowercase. A stem thick, centred on the x-height.
-  os2.yStrikeoutSize = stem;
-  os2.yStrikeoutPosition = Math.round((xHeight + stem) / 2);
-
-  const calculatedPairs = latinKerning(built.map(kerningGlyph), config);
-  const glyphIndex = new Map(built.map((entry, index) => [entry.char, index + 1]));
-  const charPairs: KerningPair<number>[] = calculatedPairs.map((pair) => ({
-    left: glyphIndex.get(pair.left)!,
-    right: glyphIndex.get(pair.right)!,
-    value: pair.value,
-  }));
-  // OpenType.js can apply this map while the Font object is in memory, even
-  // though its serializer does not write it. buildFontBytes writes the same
-  // pairs to GPOS below.
-  font.kerningPairs = Object.fromEntries(
-    charPairs.map(({ left, right, value }) => [`${left},${right}`, value])
-  );
-
-  return {
-    font,
-    hints: { glyphs: glyphHints, private: privateHints(config) } as FontHints,
-    kerning: charPairs,
-    link,
-  };
-}
-
-// Offsets of the fields opentype.js derives on its own and offers no option
-// for: head.modified and head.macStyle, and the caret slope in hhea.
-const HEAD_CREATED = 20;
-const HEAD_MODIFIED = 28;
-const HEAD_MAC_STYLE = 44;
-/** LONGDATETIME counts from 1904-01-01; unix time counts from 1970-01-01. */
-const MAC_EPOCH_OFFSET = 2082844800;
-const HHEA_CARET_SLOPE_RISE = 18;
-const HHEA_CARET_SLOPE_RUN = 20;
-const CARET_RISE = 1000;
-
 /**
- * head.macStyle has to agree with OS/2.fsSelection, and opentype.js sets its
- * bold bit from the weight alone. It also stamps head.modified with the
- * current time whatever head.created was given. An italic leans its text
- * cursor to follow the letters, which opentype.js always writes upright.
- */
-function finishHeaderTables(
-  input: Uint8Array,
-  link: { bold: boolean; italic: boolean },
-  slant = 0,
-  timestamp?: number
-): Uint8Array {
-  const macStyle = (link.bold ? 1 : 0) | (link.italic ? 2 : 0);
-  let bytes = patchSfntTable(input, 'head', (head) => {
-    head.setUint16(HEAD_MAC_STYLE, macStyle);
-    if (timestamp !== undefined) {
-      const stamp = BigInt(Math.round(timestamp) + MAC_EPOCH_OFFSET);
-      head.setBigInt64(HEAD_CREATED, stamp);
-      head.setBigInt64(HEAD_MODIFIED, stamp);
-    }
-  });
-  if (slant) {
-    bytes = patchSfntTable(bytes, 'hhea', (hhea) => {
-      hhea.setInt16(HHEA_CARET_SLOPE_RISE, CARET_RISE);
-      hhea.setInt16(
-        HHEA_CARET_SLOPE_RUN,
-        Math.round(CARET_RISE * slantFactor(slant))
-      );
-    });
-  }
-  return bytes;
-}
-
-/**
- * The .otf bytes a build ships: serialized, then completed with what
- * OpenType.js cannot emit — the CFF hints, the GPOS kerning table and the style
- * fields of head and hhea.
+ * The .otf bytes a build ships. Pure and Node-safe (no DOM), so the CLI and
+ * the editor build the same file.
  */
 export function buildFontBytes(
   definition: FontDefinition,
   config: FontConfig,
   options: BuildFontOptions = {}
 ): Uint8Array {
-  const { font, hints, kerning, link } = buildFontWithHints(
-    definition,
-    config,
-    options
-  );
-  const hinted = addHints(new Uint8Array(font.toArrayBuffer()), hints);
-  return finishHeaderTables(
-    addKerning(hinted, kerning),
-    link,
-    config.slant,
-    options.createdTimestamp
-  );
+  const { ascender, descender, stem, cap, row } = configToMetrics(config);
+  const built = buildGlyphs(definition, config);
+
+  const designer = config.designer?.trim() || undefined;
+  const designerURL = config.designerURL?.trim() || undefined;
+  const family = fontName(config);
+  const style = styleName(config);
+  const link = styleLink(config);
+  const xHeight = cap - row;
+  const version = config.version?.trim() || '0.1';
+  // As a number that keeps releases in order: 0.9.1 is 0.0901 and 0.10.0 is
+  // 0.1, where reading "0.10" as a decimal would put it before 0.9.
+  const [major = 0, minor = 0, patch = 0] = version.split('.').map(Number);
+  const revision = major + minor / 100 + patch / 10000;
+
+  return writeFont({
+    unitsPerEm: UNITS_PER_EM,
+    names: {
+      family,
+      style,
+      // The four-style filing (see styleLink): "Brutalita Light" / "Regular".
+      legacyFamily: `${family} ${link.familySuffix}`.trim(),
+      legacyStyle: link.subfamily,
+      postScriptName: `${family}${style}`.replace(/\s/g, ''),
+      uniqueID: [designer, `${family} ${style}`].filter(Boolean).join(': '),
+      // Sources written before `config.version` existed are version 0.1.
+      version: `Version ${version}`,
+      copyright: 'Copyright (c) 2021, Javier Bórquez',
+      license: 'BSD 3-Clause License',
+      licenseURL: 'https://github.com/javierbyte/brutalita/blob/master/LICENSE',
+      manufacturer: designer,
+      manufacturerURL: designerURL,
+      designer,
+      designerURL,
+      description: 'An experimental geometric font.',
+    },
+    revision: Number.isFinite(revision) ? revision : undefined,
+    weightClass: config.weight,
+    // Bold only where the style is filed as one (see styleLink): a bit set on
+    // every heavy weight makes them all claim to be the family's bold.
+    bold: link.bold,
+    italic: link.italic,
+    italicAngle: -(config.slant ?? 0),
+    monospace: config.monospace,
+    ascender,
+    descender,
+    capHeight: cap,
+    xHeight,
+    // Both rules are a stem thick, as the letters are. The underline starts
+    // half a row under the baseline, which is on the lattice at every weight;
+    // the strikeout is centred on the x-height, where Regular puts both of
+    // its edges on the lattice too.
+    underline: { position: -row / 2, thickness: stem },
+    strikeout: { position: Math.round((xHeight + stem) / 2), size: stem },
+    // Half size, because half of the lattice is still pixels: a faked
+    // superscript at 25.6px is the 12.8px rendering, strokes and all. It hangs
+    // from the cap line, and a subscript drops half a row.
+    superscript: { size: UNITS_PER_EM / 2, offset: Math.round(cap / 2) },
+    subscript: { size: UNITS_PER_EM / 2, offset: row / 2 },
+    panose: panose(config),
+    vendorID: 'JVBY',
+    created: options.createdTimestamp,
+    glyphs: [
+      { name: '.notdef', advance: MONOSPACE_ADVANCE },
+      ...built.map(({ char, advance, contours, hints }) => ({
+        unicode: char.codePointAt(0),
+        advance,
+        contours,
+        hints,
+      })),
+    ],
+    kerning: latinKerning(built, config).map(({ left, right, value }) => ({
+      left: glyphName(left),
+      right: glyphName(right),
+      value,
+    })),
+    hints: privateHints(config),
+  });
 }
 
 export async function downloadFont(
@@ -988,10 +705,8 @@ export async function downloadFont(
 ) {
   const bytes = buildFontBytes(definition, config);
 
-  // opentype.js v2 deprecated Font.download() (no platform-specific actions);
-  // serialize to an ArrayBuffer and trigger the download ourselves. blob-utils
-  // touches `document` at module load, so import it lazily — that keeps this
-  // module importable in Node (the CLI imports buildFont from here).
+  // blob-utils touches `document` at module load, so import it lazily — that
+  // keeps this module importable in Node (the CLI builds fonts from here).
   const { downloadBlob } = await import('./blob-utils');
   downloadBlob(fontFileName(config), bytes.slice().buffer, 'font/otf');
 }

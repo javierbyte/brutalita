@@ -4,7 +4,7 @@
 
 Brutalita is an experimental font and font editor. Draw in your browser, download OTF.
 
-The name means "little brutal" in spanish. Made with SVG and Opentype.JS.
+The name means "little brutal" in spanish.
 
 - **[brutalita.com](https://brutalita.com/)** — the editor
 - **[brutalita.com/demo](https://brutalita.com/demo)** — specimens at several sizes
@@ -41,7 +41,7 @@ Mono files are named `Brutalita Mono-{Style}`, with the space URL-encoded:
 
 Both families cover printable ASCII, the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` —
 and `↕`. Accents sit in their own band above the cap line, so a line of accented
-capitals still fits its line box; `line-height: normal` is 1.24em.
+capitals still fits its line box; `line-height: normal` is 1.25em.
 
 ## CLI
 
@@ -136,13 +136,17 @@ pnpm typecheck
 pnpm build:cli   # bundle the CLI to dist/cli/brutalita.mjs
 ```
 
+The `.otf` files are written by [`packages/otf-writer`](packages/otf-writer),
+a dependency-free OpenType writer that imports nothing from the rest of the
+repository.
+
 The built fonts and the banner are committed: the `.otf` files are the golden
 reference for the build tests, and GitHub serves the banner above straight from
 the repo. `pnpm assets` rebuilds them byte-for-byte, so a clean `git status`
 afterwards means they are current.
 
 To release a new version of the typeface, bump `config.version` in `src/font.json`
-and the `--timestamp` in `fonts:otf`, then run `pnpm assets`.
+and `RELEASED` in `scripts/build-fonts.ts`, then run `pnpm assets`.
 
 ## License
 
