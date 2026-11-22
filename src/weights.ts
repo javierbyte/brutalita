@@ -66,10 +66,58 @@ const STANDARD_STYLE_NAMES: Record<number, string> = {
 export function styleName(config: {
   weight: FontWeightType;
   styleName?: string;
+  slant?: number;
 }): string {
   const override = config.styleName?.trim();
   if (override) return override;
-  return STANDARD_STYLE_NAMES[config.weight] ?? String(config.weight);
+  const name = STANDARD_STYLE_NAMES[config.weight] ?? String(config.weight);
+  return config.slant ? (name === 'Regular' ? 'Italic' : `${name} Italic`) : name;
+}
+
+export type StyleLink = {
+  /** Appended to the family name in name ID 1; empty for the linked styles. */
+  familySuffix: string;
+  /** Name ID 2, which may only ever be one of these four. */
+  subfamily: 'Regular' | 'Italic' | 'Bold' | 'Bold Italic';
+  bold: boolean;
+  italic: boolean;
+};
+
+/**
+ * How a style is filed for software that only understands four styles per
+ * family (GDI, Office): Regular, Italic, Bold and Bold Italic. Only weight 400
+ * and its bold, 700, share the bare family name. Every other weight becomes a
+ * family of its own — "Brutalita Light" — whose style is Regular or Italic,
+ * and is not flagged bold, or the four weights from SemiBold up would all
+ * answer to "Brutalita Bold" and all but one of them be unreachable. Software
+ * that reads the typographic names (IDs 16 and 17) still sees one family.
+ */
+export function styleLink(config: {
+  weight: FontWeightType;
+  styleName?: string;
+  slant?: number;
+}): StyleLink {
+  const italic = !!config.slant;
+  const full = styleName(config);
+  const bold = config.weight === 700;
+  const linked = bold
+    ? italic
+      ? 'Bold Italic'
+      : 'Bold'
+    : italic
+      ? 'Italic'
+      : 'Regular';
+  // An overridden style name is linked only when it says what the weight
+  // already is; anything else is a style of its own.
+  if ((config.weight === 400 || bold) && full === linked) {
+    return { familySuffix: '', subfamily: linked, bold, italic };
+  }
+  return {
+    familySuffix: italic ? full.replace(/\s*Italic$/, '') : full,
+    subfamily: italic ? 'Italic' : 'Regular',
+    bold: false,
+    italic,
+  };
 }
 
 /**

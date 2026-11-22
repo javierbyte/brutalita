@@ -2,7 +2,7 @@
 // build, render, info and watch so they all reject the same bad input.
 import { fontName } from '../src/font-maker';
 import { formatIssue, validateFontSource } from '../src/font-validate';
-import type { Issue, ValidationResult } from '../src/font-validate';
+import type { Issue } from '../src/font-validate';
 import type { FontConfig, FontDefinition, FontWeightType } from '../src/types';
 import {
   MAX_WEIGHT,
@@ -15,6 +15,7 @@ import { asList, UsageError } from './args';
 import { SourceError } from './context';
 import type { CommandContext } from './context';
 import { loadSource } from './io';
+import { plural } from './log';
 
 const MAX_LISTED_ISSUES = 20;
 
@@ -49,14 +50,12 @@ export function loadValidatedSource(
   options: { strict?: boolean; quietWarnings?: boolean } = {}
 ): ResolvedSource {
   const source = loadSource(argument);
-  const result: ValidationResult = validateFontSource(source.json);
+  const result = validateFontSource(source.json);
 
   if (!result.ok) {
     reportIssues(result.errors, source.label, (line) => ctx.logger.error(line));
     throw new SourceError(
-      `${source.label} has ${result.errors.length} error${
-        result.errors.length === 1 ? '' : 's'
-      }`
+      `${source.label} has ${plural(result.errors.length, 'error')}`
     );
   }
 
@@ -72,9 +71,7 @@ export function loadValidatedSource(
 
   if (options.strict && result.warnings.length) {
     throw new SourceError(
-      `${source.label} has ${result.warnings.length} warning${
-        result.warnings.length === 1 ? '' : 's'
-      } and --strict is set`
+      `${source.label} has ${plural(result.warnings.length, 'warning')} and --strict is set`
     );
   }
 

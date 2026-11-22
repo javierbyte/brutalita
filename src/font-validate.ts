@@ -15,6 +15,10 @@ import type {
   MarkSet,
 } from './types';
 import { MAX_WEIGHT, MIN_WEIGHT, parseWeight } from './weights';
+import { CORNER_STYLES, MAX_CORNER_RADIUS, MIN_CORNER_RADIUS, STROKE_STYLES, isCornerStyle, isStrokeStyle, isValidCornerRadius } from './corners';
+import { isValidSlant, MAX_SLANT } from './slant';
+import { isValidSpacing, SPACING_RANGES } from './spacing';
+import type { SpacingKey } from './spacing';
 
 // Validation for a font source ({ config, marks, chars }), shared by the CLI and
 // the browser editor. Node-safe on purpose: no DOM, no alert() — callers decide
@@ -28,15 +32,50 @@ const GRID_MAX_X = SEGMENTS[0];
 const GRID_MAX_Y = SEGMENTS[1] + 1;
 const GRID_STEP = 0.5;
 
-const KNOWN_CONFIG_KEYS = [
-  'name',
+/** Config fields taken as text, whatever the source wrote. */
+const TEXT_FIELDS = ['name', 'designer', 'designerURL', 'styleName', 'version'] as const;
+
+/** Config fields that are either valid or an error, in the order reported. */
+const CHECKED_FIELDS: {
+  key: keyof FontConfig;
+  valid: (value: unknown) => boolean;
+  expected: string;
+}[] = [
+  {
+    key: 'slant',
+    valid: isValidSlant,
+    expected: `a number between 0 and ${MAX_SLANT} degrees`,
+  },
+  {
+    key: 'stroke',
+    valid: isStrokeStyle,
+    expected: `one of ${STROKE_STYLES.join(', ')}`,
+  },
+  {
+    key: 'corners',
+    valid: isCornerStyle,
+    expected: `one of ${CORNER_STYLES.join(', ')}`,
+  },
+  {
+    key: 'cornerRadius',
+    valid: isValidCornerRadius,
+    expected: `a number between ${MIN_CORNER_RADIUS} and ${MAX_CORNER_RADIUS}`,
+  },
+  ...(Object.keys(SPACING_RANGES) as SpacingKey[]).map((key) => ({
+    key,
+    valid: (value: unknown) => isValidSpacing(key, value),
+    expected: `a number between ${SPACING_RANGES[key].min} and ${SPACING_RANGES[key].max} font units`,
+  })),
+];
+
+const KNOWN_CONFIG_KEYS: string[] = [
+  ...TEXT_FIELDS,
+  ...CHECKED_FIELDS.map(({ key }) => key),
   'weight',
   'height',
   'monospace',
-  'designer',
-  'designerURL',
-  'styleName',
-  'version',
+  // Written by editor builds that had a single on/off corner setting.
+  'continuousCorners',
 ];
 
 /** Printable ASCII — the range a font is expected to cover end to end. */
@@ -94,29 +133,41 @@ export function formatIssue(issue: Issue, label?: string): string {
   return prefix ? `${prefix}: ${issue.message}` : issue.message;
 }
 
-function validateConfig(
-  raw: unknown,
-  errors: Issue[],
-  warnings: Issue[]
-): FontConfig {
+/** Where an issue is, in the terms `Issue` reports it. */
+type Location = Pick<Issue, 'char' | 'field' | 'layer' | 'point'>;
+
+/** The issues found so far, collected as the source is walked. */
+type Report = { errors: Issue[]; warnings: Issue[] };
+
+function fail(report: Report, at: Location, message: string) {
+  report.errors.push({ severity: 'error', ...at, message });
+}
+
+function warn(report: Report, at: Location, message: string) {
+  report.warnings.push({ severity: 'warning', ...at, message });
+}
+
+function validateConfig(raw: unknown, report: Report): FontConfig {
   const config: FontConfig = { ...DEFAULT_FONT_CONFIG };
   if (raw === undefined) return config;
 
   if (!isPlainObject(raw)) {
-    errors.push({
-      severity: 'error',
-      field: 'config',
-      message: 'must be an object',
-    });
+    fail(report, { field: 'config' }, 'must be an object');
     return config;
   }
 
-  if (raw.name !== undefined) config.name = String(raw.name);
+  for (const key of TEXT_FIELDS) {
+    if (raw[key] !== undefined) config[key] = String(raw[key]);
+  }
+  for (const { key, valid, expected } of CHECKED_FIELDS) {
+    if (raw[key] === undefined) continue;
+    if (valid(raw[key])) Object.assign(config, { [key]: raw[key] });
+    else fail(report, { field: `config.${key}` }, `must be ${expected}`);
+  }
+  if (raw.corners === undefined && raw.continuousCorners === true) {
+    config.corners = 'continuous';
+  }
   if (raw.monospace !== undefined) config.monospace = Boolean(raw.monospace);
-  if (raw.designer !== undefined) config.designer = String(raw.designer);
-  if (raw.designerURL !== undefined) config.designerURL = String(raw.designerURL);
-  if (raw.styleName !== undefined) config.styleName = String(raw.styleName);
-  if (raw.version !== undefined) config.version = String(raw.version);
   if (raw.height !== undefined && Number.isFinite(Number(raw.height))) {
     config.height = Number(raw.height);
   }
@@ -126,30 +177,23 @@ function validateConfig(
     if (weight !== null) {
       config.weight = weight;
     } else {
-      warnings.push({
-        severity: 'warning',
-        field: 'config.weight',
-        message:
-          `${JSON.stringify(raw.weight)} is not a weight between ` +
-          `${MIN_WEIGHT} and ${MAX_WEIGHT} — falling back to ${config.weight}`,
-      });
+      warn(
+        report,
+        { field: 'config.weight' },
+        `${JSON.stringify(raw.weight)} is not a weight between ` +
+          `${MIN_WEIGHT} and ${MAX_WEIGHT} — falling back to ${config.weight}`
+      );
     }
   }
 
   for (const key of Object.keys(raw)) {
     if (!KNOWN_CONFIG_KEYS.includes(key)) {
-      warnings.push({
-        severity: 'warning',
-        field: `config.${key}`,
-        message: 'unknown config key, ignored',
-      });
+      warn(report, { field: `config.${key}` }, 'unknown config key, ignored');
     }
   }
 
   return config;
 }
-
-type Location = Pick<Issue, 'char' | 'field'>;
 
 /**
  * Where a point may sit. Glyphs span the cap box plus the descender row below
@@ -170,25 +214,17 @@ const MARK_BAND = {
 function checkBounds(
   location: Location,
   layers: CharLayers,
-  band: { minY: number; maxY: number; label: string },
-  warnings: Issue[]
+  band: typeof GLYPH_BAND,
+  report: Report
 ) {
   layers.forEach((layer, layerIndex) => {
-    layer.forEach(([x, y], pointIndex) => {
-      const at = { ...location, layer: layerIndex, point: pointIndex } as const;
+    layer.forEach(([x, y], point) => {
+      const at = { ...location, layer: layerIndex, point };
       if (x < 0 || x > GRID_MAX_X) {
-        warnings.push({
-          severity: 'warning',
-          ...at,
-          message: `x=${x} is outside the 0..${GRID_MAX_X} grid`,
-        });
+        warn(report, at, `x=${x} is outside the 0..${GRID_MAX_X} grid`);
       }
       if (y < band.minY || y > band.maxY) {
-        warnings.push({
-          severity: 'warning',
-          ...at,
-          message: `y=${y} is outside the ${band.label}`,
-        });
+        warn(report, at, `y=${y} is outside the ${band.label}`);
       }
     });
   });
@@ -197,38 +233,23 @@ function checkBounds(
 function validateGlyph(
   location: Location,
   raw: unknown,
-  errors: Issue[],
-  warnings: Issue[]
+  report: Report
 ): CharLayers | undefined {
   if (!Array.isArray(raw)) {
-    errors.push({
-      severity: 'error',
-      ...location,
-      message: 'must be an array of layers',
-    });
+    fail(report, location, 'must be an array of layers');
     return undefined;
   }
 
   const layers: CharLayers = [];
 
   raw.forEach((layer, layerIndex) => {
+    const inLayer = { ...location, layer: layerIndex };
     if (!Array.isArray(layer)) {
-      errors.push({
-        severity: 'error',
-        ...location,
-        layer: layerIndex,
-        message: 'must be an array of points',
-      });
+      fail(report, inLayer, 'must be an array of points');
       return;
     }
-
     if (!layer.length) {
-      warnings.push({
-        severity: 'warning',
-        ...location,
-        layer: layerIndex,
-        message: 'empty layer, ignored by the build',
-      });
+      warn(report, inLayer, 'empty layer, ignored by the build');
       return;
     }
 
@@ -236,49 +257,29 @@ function validateGlyph(
     let layerValid = true;
 
     layer.forEach((point, pointIndex) => {
-      const at = { ...location, layer: layerIndex, point: pointIndex } as const;
+      const at = { ...inLayer, point: pointIndex };
+      const got = `(got ${JSON.stringify(point)})`;
 
       if (!Array.isArray(point) || point.length !== 2) {
-        errors.push({
-          severity: 'error',
-          ...at,
-          message: `must be a [x, y] pair (got ${JSON.stringify(point)})`,
-        });
+        fail(report, at, `must be a [x, y] pair ${got}`);
         layerValid = false;
         return;
       }
 
       const [x, y] = point;
-      if (
-        typeof x !== 'number' ||
-        typeof y !== 'number' ||
-        !Number.isFinite(x) ||
-        !Number.isFinite(y)
-      ) {
-        errors.push({
-          severity: 'error',
-          ...at,
-          message: `coordinates must be finite numbers (got ${JSON.stringify(point)})`,
-        });
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        fail(report, at, `coordinates must be finite numbers ${got}`);
         layerValid = false;
         return;
       }
 
       if (!onGrid(x) || !onGrid(y)) {
-        warnings.push({
-          severity: 'warning',
-          ...at,
-          message: `[${x}, ${y}] is not on the ${GRID_STEP} step grid`,
-        });
+        warn(report, at, `[${x}, ${y}] is not on the ${GRID_STEP} step grid`);
       }
 
       const previous = points[points.length - 1];
       if (previous && previous[0] === x && previous[1] === y) {
-        warnings.push({
-          severity: 'warning',
-          ...at,
-          message: 'repeats the previous point',
-        });
+        warn(report, at, 'repeats the previous point');
       }
 
       points.push([x, y]);
@@ -291,29 +292,29 @@ function validateGlyph(
 }
 
 /** The `marks` map: accents drawn once, placed on letters by ./compose. */
-function validateMarks(raw: unknown, errors: Issue[], warnings: Issue[]): MarkSet {
+function validateMarks(raw: unknown, report: Report): MarkSet {
   if (raw === undefined) return {};
 
   if (!isPlainObject(raw)) {
-    errors.push({ severity: 'error', field: 'marks', message: 'must be an object' });
+    fail(report, { field: 'marks' }, 'must be an object');
     return {};
   }
 
   const marks: MarkSet = {};
   for (const name of Object.keys(raw)) {
     const location = { field: `marks.${name}` };
-    const layers = validateGlyph(location, raw[name], errors, warnings);
+    const layers = validateGlyph(location, raw[name], report);
     if (!layers) continue;
 
-    checkBounds(location, layers, MARK_BAND, warnings);
+    checkBounds(location, layers, MARK_BAND, report);
 
     const bounds = layerBounds(layers);
     if (bounds && bounds.maxY !== 0) {
-      warnings.push({
-        severity: 'warning',
-        ...location,
-        message: `foot sits on y=${bounds.maxY}; marks are drawn with their foot on y = 0`,
-      });
+      warn(
+        report,
+        location,
+        `foot sits on y=${bounds.maxY}; marks are drawn with their foot on y = 0`
+      );
     }
 
     marks[name] = layers;
@@ -331,44 +332,35 @@ function validateComposite(
   char: string,
   raw: Composite,
   marks: MarkSet,
-  errors: Issue[],
-  warnings: Issue[]
+  report: Report
 ): Composite | undefined {
   let valid = true;
 
   if (raw.mark !== undefined && !(raw.mark in marks)) {
-    errors.push({
-      severity: 'error',
-      char,
-      message: `no mark named ${JSON.stringify(raw.mark)} in "marks"`,
-    });
+    fail(report, { char }, `no mark named ${JSON.stringify(raw.mark)} in "marks"`);
     valid = false;
   }
 
   if (raw.rotate !== undefined && raw.rotate !== HALF_TURN) {
-    errors.push({
-      severity: 'error',
-      char,
-      message: `rotate must be ${HALF_TURN} (got ${JSON.stringify(raw.rotate)})`,
-    });
+    fail(
+      report,
+      { char },
+      `rotate must be ${HALF_TURN} (got ${JSON.stringify(raw.rotate)})`
+    );
     valid = false;
   }
 
   if (raw.mark === undefined && raw.rotate === undefined) {
-    warnings.push({
-      severity: 'warning',
-      char,
-      message: 'composite has neither "mark" nor "rotate", so it copies its base',
-    });
+    warn(
+      report,
+      { char },
+      'composite has neither "mark" nor "rotate", so it copies its base'
+    );
   }
 
   for (const key of Object.keys(raw)) {
     if (!KNOWN_COMPOSITE_KEYS.includes(key)) {
-      warnings.push({
-        severity: 'warning',
-        char,
-        message: `unknown composite key ${JSON.stringify(key)}, ignored`,
-      });
+      warn(report, { char }, `unknown composite key ${JSON.stringify(key)}, ignored`);
     }
   }
 
@@ -384,8 +376,7 @@ function resolveComposites(
   drawn: FontDefinition,
   composites: { [char: string]: Composite },
   marks: MarkSet,
-  errors: Issue[],
-  warnings: Issue[]
+  report: Report
 ): FontDefinition {
   const chars: FontDefinition = { ...drawn };
   const pending = new Set<string>();
@@ -395,31 +386,24 @@ function resolveComposites(
 
     const composite = composites[char];
     if (!composite) return undefined;
+    const base = JSON.stringify(composite.base);
 
     if (pending.has(char)) {
-      errors.push({
-        severity: 'error',
-        char,
-        message: `is built from itself through ${JSON.stringify(composite.base)}`,
-      });
+      fail(report, { char }, `is built from itself through ${base}`);
       return undefined;
     }
 
     pending.add(char);
-    const base = resolve(composite.base);
+    const baseLayers = resolve(composite.base);
     pending.delete(char);
 
-    if (!base) {
-      errors.push({
-        severity: 'error',
-        char,
-        message: `no glyph for base ${JSON.stringify(composite.base)}`,
-      });
+    if (!baseLayers) {
+      fail(report, { char }, `no glyph for base ${base}`);
       return undefined;
     }
 
-    const layers = composeGlyph(base, composite, marks);
-    checkBounds({ char }, layers, GLYPH_BAND, warnings);
+    const layers = composeGlyph(baseLayers, composite, marks);
+    checkBounds({ char }, layers, GLYPH_BAND, report);
     chars[char] = layers;
     return layers;
   }
@@ -434,90 +418,82 @@ function resolveComposites(
  * first one.
  */
 export function validateFontSource(json: unknown): ValidationResult {
-  const errors: Issue[] = [];
-  const warnings: Issue[] = [];
+  const report: Report = { errors: [], warnings: [] };
+  const result = (config: FontConfig, chars: FontDefinition = {}) => ({
+    ok: report.errors.length === 0,
+    config,
+    chars,
+    ...report,
+  });
 
   if (!isPlainObject(json)) {
-    errors.push({
-      severity: 'error',
-      message: 'the source must be an object with "config" and "chars"',
-    });
-    return {
-      ok: false,
-      config: { ...DEFAULT_FONT_CONFIG },
-      chars: {},
-      errors,
-      warnings,
-    };
+    fail(report, {}, 'the source must be an object with "config" and "chars"');
+    return result({ ...DEFAULT_FONT_CONFIG });
   }
 
-  const config = validateConfig(json.config, errors, warnings);
-  const marks = validateMarks(json.marks, errors, warnings);
+  const config = validateConfig(json.config, report);
+  const marks = validateMarks(json.marks, report);
 
   const rawChars = json.chars;
   if (!isPlainObject(rawChars)) {
-    errors.push({
-      severity: 'error',
-      field: 'chars',
-      message: 'missing or not an object — expected { config, chars }',
-    });
-    return { ok: false, config, chars: {}, errors, warnings };
+    fail(
+      report,
+      { field: 'chars' },
+      'missing or not an object — expected { config, chars }'
+    );
+    return result(config);
   }
 
   const charKeys = Object.keys(rawChars);
   if (!charKeys.length) {
-    errors.push({ severity: 'error', field: 'chars', message: 'no characters found' });
-    return { ok: false, config, chars: {}, errors, warnings };
+    fail(report, { field: 'chars' }, 'no characters found');
+    return result(config);
   }
 
   const drawn: FontDefinition = {};
   const composites: { [char: string]: Composite } = {};
   for (const char of charKeys) {
-    // The build encodes a glyph as char.charCodeAt(0), so a multi-character key
-    // would silently produce a glyph for its first character only.
+    // The build encodes a glyph by its one code point, so a multi-character
+    // key would silently produce a glyph for its first character only.
     if (Array.from(char).length !== 1) {
-      errors.push({
-        severity: 'error',
-        char,
-        message: 'keys must be exactly one character',
-      });
+      fail(report, { char }, 'keys must be exactly one character');
       continue;
     }
-    if (char.charCodeAt(0) > 0xffff || char.codePointAt(0)! > 0xffff) {
-      errors.push({
-        severity: 'error',
-        char,
-        message: 'characters outside the Basic Multilingual Plane are not supported',
-      });
+    if (char.codePointAt(0)! > 0xffff) {
+      fail(
+        report,
+        { char },
+        'characters outside the Basic Multilingual Plane are not supported'
+      );
       continue;
     }
 
     const raw = rawChars[char];
     if (isComposite(raw)) {
-      const composite = validateComposite(char, raw, marks, errors, warnings);
+      const composite = validateComposite(char, raw, marks, report);
       if (composite) composites[char] = composite;
       continue;
     }
 
-    const layers = validateGlyph({ char }, raw, errors, warnings);
+    const layers = validateGlyph({ char }, raw, report);
     if (layers) {
-      checkBounds({ char }, layers, GLYPH_BAND, warnings);
+      checkBounds({ char }, layers, GLYPH_BAND, report);
       drawn[char] = layers;
     }
   }
 
-  const chars = resolveComposites(drawn, composites, marks, errors, warnings);
+  const chars = resolveComposites(drawn, composites, marks, report);
 
   const missing = PRINTABLE_ASCII.filter((char) => !(char in chars));
   if (missing.length) {
-    warnings.push({
-      severity: 'warning',
-      field: 'chars',
-      message: `no glyph for ${missing.length} printable ASCII character${
+    warn(
+      report,
+      { field: 'chars' },
+      `no glyph for ${missing.length} printable ASCII character${
         missing.length === 1 ? '' : 's'
-      }: ${missing.map((c) => JSON.stringify(c)).join(' ')}`,
-    });
+      }: ${missing.map((c) => JSON.stringify(c)).join(' ')}`
+    );
   }
 
-  return { ok: errors.length === 0, config, chars, errors, warnings };
+  return result(config, chars);
 }

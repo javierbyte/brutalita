@@ -34,8 +34,6 @@ html {
 
 :root {
   --topnav-height: 44px;
-  --separator-color: #444;
-  --topnav-button-height: 32px;
 }
 
 /*
@@ -114,92 +112,80 @@ html {
   }
 }
 
-.type,
-textarea {
-  width: calc(100vw - 32px);
-  margin: 0;
-  padding: 14px;
+/*
+  The preview. .type carries the live font (set inline, see useLiveFont) and
+  both children inherit it: an invisible mirror of the text that sizes the
+  area, and the textarea laid over it that is actually seen and edited. They
+  must wrap identically, so every property that affects layout is shared.
+*/
+.type {
+  min-height: 100%;
+  line-height: 30px;
+  color: #fff;
+  font-kerning: normal;
+  font-synthesis: none;
+  /* macOS thickens smoothed text by a fraction of a pixel on every side,
+     which greys both edges of a stem that would otherwise fill whole pixels. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.type-mirror,
+.type textarea {
   display: block;
-  position: absolute;
-  overflow: hidden;
-  top: 0;
-  left: 0;
+  width: 100%;
+  margin: 0;
+  padding: 22px 14px 200px;
+  border: none;
+  font: inherit;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
 }
 
 @media screen and (min-width: 640px) {
-  .type,
-  textarea {
-    padding: 28px;
+  .type-mirror,
+  .type textarea {
+    padding: 36px 28px 200px;
   }
 }
 
-textarea {
-  margin-top: 8px;
-  transform-origin: center left;
-  transform: scalex(1.01);
-  word-break: break-all;
-  opacity: 1;
-  background-color: #0000;
-  color: #f000;
+.type-mirror {
+  visibility: hidden;
+}
+
+.type textarea {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: transparent;
+  color: inherit;
   -webkit-appearance: none;
   appearance: none;
-  border: none;
-  font-size: 23px;
-  letter-spacing: 0;
-  font-family: Courier, monospace;
-  line-height: 30px;
-  /* Sits above the rendered glyph layer (.type) for caret/selection, but below
-     Radix overlays (popover/menu/sheet are z-50) so dropdowns stay clickable. */
-  z-index: 10;
+  border-radius: 0;
   resize: none;
   caret-color: white;
   outline: none;
 }
-textarea:focus,
-textarea:active {
-  outline: none;
-}
 
-textarea::selection {
+.type textarea::selection {
   background-color: #e74c3c80;
-  color: transparent;
 }
 
-.type {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-}
-.type-break {
-  width: 100%;
-}
 svg {
   display: block;
   margin: 0;
 }
-.key {
-  color: white;
-  height: 22px;
-  margin-bottom: -4px;
-  margin-right: 4px;
-  margin-top: 12px;
-  width: 10px;
-}
-
-.unknown-char {
-  display: block;
-  line-height: 20px;
-  font-size: 24px;
-  color: red;
-}
-
-/* The character editor now lives inside the app-layer shadcn sidebar. */
+/* The glyph tab of the sidebar. */
 .editor-container {
+  -webkit-user-select: none;
   user-select: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
+  gap: 16px;
   padding: 12px 4px 24px;
 }
 
@@ -219,15 +205,18 @@ svg {
   padding: 0;
   margin: 0;
   -webkit-appearance: none;
-  border: none;
-  border-radius: 8px;
-  background: #222;
+  /* The same well as the dropdown and the switches of the Style tab. */
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  background: var(--background);
   color: #fff;
-  box-shadow: inset #111 0 2px 8px;
 }
 
 .editor-input-label {
-  text-shadow: #0004 0 -1px 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: var(--muted-foreground);
 }
 
 .editor-input-container {
@@ -237,54 +226,252 @@ svg {
   align-content: flex-start;
   flex-direction: column;
   gap: 4px;
-  text-transform: uppercase;
-  font-size: 12px;
 }
 
-.editor-char {
-  font-size: 64px;
-  color: #fff;
+/*
+  The glyph canvas (src/components/glyph-editor.tsx): one grid holding every
+  stroke of the glyph, a toolbar that turns into the bin while a point is
+  dragged, and the list of strokes.
+*/
+.glyph-editor {
+  --glyph-accent: var(--primary);
+  --glyph-danger: var(--destructive);
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: 100%;
+  grid-template-areas: 'header' 'canvas' 'toolbar' 'strokes' 'hint';
+  justify-items: center;
+  gap: 10px;
+  /* iOS: no selection loupe and no callout from a finger resting on a dot. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.editor-controls {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  margin-top: 16px;
-  height: 32px;
+/* With room to spare, the character and the stroke list sit beside the canvas
+   instead of above and below it (see useCanvasLayout). */
+.glyph-editor[data-wide] {
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto 1fr auto auto;
+  grid-template-areas: 'canvas header' 'canvas strokes' 'toolbar toolbar' 'hint hint';
+  column-gap: 12px;
+}
+
+.glyph-header {
+  grid-area: header;
   display: flex;
-  width: 100%;
-  justify-content: center;
+  gap: 12px;
+  margin-bottom: 6px;
 }
-.editor svg {
+.glyph-editor[data-wide] .glyph-header {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.glyph-canvas {
+  grid-area: canvas;
+  cursor: pointer;
+  outline: none;
+  /* The canvas takes every touch for itself: a drag moves a point, it never
+     scrolls the sidebar or zooms the page. The sidebar still scrolls from
+     anywhere around it. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.glyph-canvas[data-moving] {
+  cursor: grabbing;
+}
+.glyph-canvas:focus-visible {
+  outline: 1px solid #555;
+}
+/* Everything is hit-tested from the pointer's position, not from elements. */
+.glyph-canvas * {
   pointer-events: none;
 }
-.editor-dot {
-  cursor: pointer;
-  height: 16px;
-  width: 16px;
-  transform: translatey(-50%) translatex(-50%);
-  border-radius: 16px;
-  opacity: 1;
-  position: absolute;
+
+.glyph-dot {
+  fill: #555;
+}
+.glyph-dot[data-major] {
+  fill: var(--muted-foreground);
 }
 
-.editor-controls button {
-  background-color: #444;
-  border: none;
-  padding: 0 8px;
-  height: 24px;
-  line-height: 1;
-  margin: 0;
-  border-radius: 6px;
+.glyph-stroke {
+  color: #fff;
 }
-.editor-controls button:hover {
-  background-color: #555;
+.glyph-stroke[data-state='idle'] {
+  opacity: 0.3;
+}
+
+/* The original editor's look: a point in use is a white dot on the grid. */
+.glyph-node {
+  fill: #fff;
+}
+
+/* The highlighted dot: where the next line starts. */
+.glyph-end {
+  fill: var(--glyph-accent);
+}
+
+.glyph-mid {
+  fill: var(--glyph-accent);
+}
+
+.glyph-aim {
+  fill: none;
+  stroke: var(--glyph-accent);
+  stroke-width: 2px;
+}
+.glyph-aim-line {
+  stroke: var(--glyph-accent);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-dasharray: 1 6;
+}
+
+.glyph-held {
+  fill: var(--glyph-accent);
+}
+.glyph-guide line {
+  stroke: var(--glyph-accent);
+  stroke-width: 1px;
+  opacity: 0.35;
+}
+
+.glyph-toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  height: 40px;
+}
+.glyph-toolbar-space {
+  flex: 1;
+}
+
+.glyph-tool {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  color: var(--muted-foreground);
+  /* No double-tap zoom, so quick repeated undos register as taps. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.glyph-tool:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.glyph-tool:active:not(:disabled) {
+  color: var(--foreground);
+}
+
+.glyph-bin {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--muted-foreground);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+.glyph-bin[data-over] {
+  border: 1px solid var(--glyph-danger);
+  background-color: var(--glyph-danger);
   color: #fff;
 }
 
-.quick-links a {
-  color: #74b9ff;
-  padding: 8px;
-  text-decoration: none;
+.glyph-strokes {
+  grid-area: strokes;
+  align-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.glyph-chip {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  background-color: var(--background);
+  color: var(--muted-foreground);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.glyph-chip[aria-pressed='true'] {
+  background-color: var(--input);
+  color: var(--foreground);
+}
+.glyph-chip-new {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.glyph-thumb {
+  color: #fff;
+  opacity: 0.22;
+}
+.glyph-thumb[data-on] {
+  opacity: 1;
+}
+
+.glyph-hint {
+  grid-area: hint;
+  margin: 0;
+  min-height: 2.8em;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--muted-foreground);
+}
+
+/* The dragged point, once the pointer has carried it off the canvas. */
+.glyph-float {
+  position: absolute;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--glyph-accent);
+  pointer-events: none;
+}
+
+/* Hover only where there is a pointer to hover with: on a touch screen it
+   would stick to the last button tapped. */
+@media (hover: hover) {
+  .glyph-tool:hover:not(:disabled),
+  .glyph-chip:hover {
+    color: var(--foreground);
+  }
+}
+
+@media (pointer: coarse) {
+  .glyph-toolbar {
+    height: 44px;
+  }
+  .glyph-tool {
+    width: 44px;
+    height: 44px;
+  }
+  .glyph-chip {
+    width: 36px;
+  }
 }

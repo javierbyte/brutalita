@@ -45,7 +45,7 @@ function findCommand(name: string): Command | undefined {
  * Pre-0.4 the CLI was a single command: `brutalita font.json -o out.otf`. Keep
  * that working by inferring the subcommand from the arguments.
  */
-function inferCommand(argv: string[]): { name: string; argv: string[] } | undefined {
+function inferCommand(argv: string[]): Command | undefined {
   const first = argv[0];
   if (!first || first.startsWith('-') || !existsSync(first)) return undefined;
 
@@ -57,7 +57,7 @@ function inferCommand(argv: string[]): { name: string; argv: string[] } | undefi
     argv.includes('--text-file') ||
     (out !== undefined && extname(out).toLowerCase() === '.svg');
 
-  return { name: wantsSvg ? 'render' : 'build', argv };
+  return findCommand(wantsSvg ? 'render' : 'build');
 }
 
 function levelFrom(values: ParsedValues): LogLevel {
@@ -66,66 +66,57 @@ function levelFrom(values: ParsedValues): LogLevel {
   return 'normal';
 }
 
+function rootHelp(): string {
+  return renderRootHelp(
+    COMMANDS.map(({ spec }) => ({ name: spec.name, summary: spec.summary })),
+    GLOBAL_OPTIONS,
+    VERSION
+  );
+}
+
 function main(argv: string[]): number {
   // `pnpm cli -- <args>` forwards a literal `--`, which parseArgs would treat as
   // the options terminator; drop a single leading one.
   const args = argv[0] === '--' ? argv.slice(1) : argv;
+  const [first, second] = args;
 
   const logger = createLogger();
 
-  if (!args.length || args[0] === '--help' || args[0] === '-h') {
-    process.stdout.write(
-      renderRootHelp(
-        COMMANDS.map(({ spec }) => ({ name: spec.name, summary: spec.summary })),
-        GLOBAL_OPTIONS,
-        VERSION
-      )
-    );
+  if (!first || first === '--help' || first === '-h') {
+    process.stdout.write(rootHelp());
     return EXIT_OK;
   }
 
-  if (args[0] === '--version' || args[0] === '-V') {
+  if (first === '--version' || first === '-V') {
     process.stdout.write(`${VERSION}\n`);
     return EXIT_OK;
   }
 
-  if (args[0] === 'help') {
-    const target = args[1] ? findCommand(args[1]) : undefined;
-    if (args[1] && !target) {
-      logger.error(`unknown command "${args[1]}"`);
+  if (first === 'help') {
+    const target = second ? findCommand(second) : undefined;
+    if (second && !target) {
+      logger.error(`unknown command "${second}"`);
       return EXIT_USAGE;
     }
     process.stdout.write(
-      target
-        ? renderCommandHelp(target.spec, GLOBAL_OPTIONS)
-        : renderRootHelp(
-            COMMANDS.map(({ spec }) => ({ name: spec.name, summary: spec.summary })),
-            GLOBAL_OPTIONS,
-            VERSION
-          )
+      target ? renderCommandHelp(target.spec, GLOBAL_OPTIONS) : rootHelp()
     );
     return EXIT_OK;
   }
 
-  let command = findCommand(args[0]);
-  let rest = args.slice(1);
-
+  const named = findCommand(first);
+  const command = named ?? inferCommand(args);
   if (!command) {
-    const inferred = inferCommand(args);
-    if (!inferred) {
-      logger.error(
-        `unknown command "${args[0]}" — run \`brutalita --help\` for the command list`
-      );
-      return EXIT_USAGE;
-    }
-    command = findCommand(inferred.name);
-    rest = inferred.argv;
+    logger.error(
+      `unknown command "${first}" — run \`brutalita --help\` for the command list`
+    );
+    return EXIT_USAGE;
   }
 
-  const parsed = parseCommandArgs(command!.spec, rest);
+  const parsed = parseCommandArgs(command.spec, named ? args.slice(1) : args);
 
   if (parsed.values.help === true) {
-    process.stdout.write(renderCommandHelp(command!.spec, GLOBAL_OPTIONS));
+    process.stdout.write(renderCommandHelp(command.spec, GLOBAL_OPTIONS));
     return EXIT_OK;
   }
 
@@ -137,11 +128,11 @@ function main(argv: string[]): number {
     json: parsed.values.json === true,
   };
 
-  if (command!.spec.name !== args[0]) {
-    ctx.logger.debug(`inferred \`brutalita ${command!.spec.name}\` from the arguments`);
+  if (!named) {
+    ctx.logger.debug(`inferred \`brutalita ${command.spec.name}\` from the arguments`);
   }
 
-  return command!.run(parsed.values as never, parsed.positionals, ctx);
+  return command.run(parsed.values as never, parsed.positionals, ctx);
 }
 
 try {

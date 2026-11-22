@@ -1,7 +1,7 @@
 name: Publish
 
 # Publishes to npm when the version in package.json is one the registry does not
-# have yet. Any other push to master ends green with nothing done, so bumping the
+# have yet. Any other push to main ends green with nothing done, so bumping the
 # version is the only thing that cuts a release.
 #
 # Auth is npm trusted publishing (OIDC) — no NPM_TOKEN. The trusted publisher is
@@ -11,7 +11,7 @@ name: Publish
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

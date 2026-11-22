@@ -1,3 +1,5 @@
+import type { CornerStyle, StrokeStyle } from './corners';
+
 export type CharLayer = [number, number][];
 export type CharLayers = CharLayer[];
 
@@ -22,6 +24,26 @@ export type FontConfig = {
   weight: FontWeightType;
   height: number;
   monospace: boolean;
+  /** Rightward italic angle in degrees, 0..20. Defaults to upright (0). */
+  slant?: number;
+  /** The pen: `round` (the default) or `sharp` ends, corners and dots. */
+  stroke?: StrokeStyle;
+  /**
+   * How bends are drawn: as the source draws them (`chamfer`, the default), as
+   * arcs (`round`) or as curvature-continuous bends (`continuous`).
+   */
+  corners?: CornerStyle;
+  /** Radius of those curves, 20..100; see ./corners. Ignored for `chamfer`. */
+  cornerRadius?: number;
+  /**
+   * Proportional spacing, in font units; ranges and defaults in ./spacing.
+   * `spacing` is the gap between two flat-sided letters, `wordSpacing` the
+   * advance of the space glyph, and `kerning` the most a pair may be pulled
+   * together (0 turns pair kerning off). Ignored by the monospace family.
+   */
+  spacing?: number;
+  wordSpacing?: number;
+  kerning?: number;
   designer?: string;
   designerURL?: string;
   /**

@@ -7,7 +7,7 @@ import { PRINTABLE_ASCII } from '../../src/font-validate';
 import type { FontDefinition } from '../../src/types';
 
 import { asEnum, UsageError } from '../args';
-import type { CommandSpec } from '../args';
+import type { CommandSpec, ValuesOf } from '../args';
 import { GLOBAL_OPTIONS } from '../context';
 import type { CommandContext } from '../context';
 import { writeOutput } from '../io';
@@ -33,7 +33,7 @@ export const spec = {
   examples: ['brutalita init', 'brutalita init my-font --from brutalita --name "My Font"'],
 } satisfies CommandSpec;
 
-type Values = { from?: string; name?: string; force?: boolean };
+type Values = ValuesOf<typeof spec>;
 
 export function run(
   values: Values,

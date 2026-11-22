@@ -1,67 +1,64 @@
 'use client';
 
-/* eslint react/prop-types: 0 */
-
-import { Fragment, useState, useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { downloadBlob, uploadBlob } from './blob-utils';
-import { downloadFont } from './font-maker';
+import {
+  buildFontBytes,
+  downloadFont,
+  GEOMETRY_KEYS,
+  UNITS_PER_EM,
+} from './font-maker';
 
 import FONT_DEFINITION_SRC from './font.json';
 
-import { Key } from './components/key';
 import { AppSidebar } from './components/app-sidebar';
 import { AppMenubar } from './components/app-menubar';
-import { MARK_ROWS } from './compose';
+import { GlyphEditor } from './components/glyph-editor';
 import { DEFAULT_FONT_CONFIG, fontConfigReducer } from './font-config';
 import { formatIssue, validateFontSource } from './font-validate';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 
-import { SEGMENTS } from './types';
-import type {
-  CharLayer,
-  CharLayers,
-  FontConfig,
-  FontDefinition,
-  FontWeightType,
-} from './types';
-import { editorStrokeWidth } from './weights';
+import type { FontConfig, FontDefinition } from './types';
 
-function fontSrcToTypedFont(fontSrc: { [char: string]: number[][][] }) {
-  const typedFont: FontDefinition = {};
+// Validation itself lives in ./font-validate so the CLI shares it. Here we only
+// turn a failed result into a throw the import handler can report.
+const MAX_REPORTED_ISSUES = 8;
 
-  for (const char in fontSrc) {
-    typedFont[char] = fontSrc[char].map((layer) =>
-      layer.map((poly) => [poly[0], poly[1]])
-    );
+function parseFont(json: unknown): { config: FontConfig; chars: FontDefinition } {
+  const { ok, config, chars, errors } = validateFontSource(json);
+
+  if (!ok) {
+    const reported = errors
+      .slice(0, MAX_REPORTED_ISSUES)
+      .map((issue) => formatIssue(issue));
+    if (errors.length > reported.length) {
+      reported.push(`…and ${errors.length - reported.length} more`);
+    }
+    throw new Error(reported.join('\n'));
   }
 
-  return typedFont;
+  return { config, chars };
 }
 
-const { config: INITIAL_FONT_CONFIG, chars: FONT_CHARS_SRC } =
+const { config: INITIAL_FONT_CONFIG, chars: INITIAL_FONT } =
   parseFont(FONT_DEFINITION_SRC);
 
-const STATE: {
-  font: FontDefinition;
-} = {
-  font: fontSrcToTypedFont(FONT_CHARS_SRC),
-};
-
+// The specimen: letters and digits first, then whatever else the font has,
+// over three lines.
 const DISPLAY_CHAR_BASE = `AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789`;
-const REMAINING_CHARS = Object.keys(STATE.font)
-  .filter((char) => !DISPLAY_CHAR_BASE.includes(char))
-  .join('')
-  .replace(' ', '')
-  .replace('\n', '');
-
-const ALL_CHARS = [...DISPLAY_CHAR_BASE, ...REMAINING_CHARS];
+const ALL_CHARS = [
+  ...DISPLAY_CHAR_BASE,
+  ...Object.keys(INITIAL_FONT).filter(
+    (char) => !DISPLAY_CHAR_BASE.includes(char) && char !== ' ' && char !== '\n'
+  ),
+];
 const SPLIT = Math.floor(ALL_CHARS.length / 3) + 2;
 ALL_CHARS.splice(SPLIT, 0, `\n`);
 ALL_CHARS.splice(SPLIT * 2 + 1, 0, `\n`);
 
-const FONT_VERSION = FONT_DEFINITION_SRC.config.version;
+const FONT_VERSION = INITIAL_FONT_CONFIG.version;
 
 const DEFAULT_TEXT = `Brutalita Sans${FONT_VERSION ? ` v${FONT_VERSION}` : ''}
 
@@ -77,303 +74,89 @@ Use the controls on this page!
 - This textarea is also editable :)
 
 "Brutalita" is a playful combination of "brutalism" and "little brutal" in Spanish.
-Uses OpenType.js to generate .otf files
 
 
 Made by @javierbyte`;
 
-const DOTSX = SEGMENTS[0];
-const DOTSY = SEGMENTS[1];
-
-function includes(arr: CharLayer, el: number[]) {
-  return arr.some((elArr) => {
-    return elArr[0] === el[0] && elArr[1] === el[1];
-  });
-}
-
-// Validation itself lives in ./font-validate so the CLI shares it. Here we only
-// turn a failed result into a throw the import handler can report.
-const MAX_REPORTED_ISSUES = 8;
-
-function parseFont(json: unknown): { config: FontConfig; chars: FontDefinition } {
-  const { ok, config, chars, errors } = validateFontSource(json);
-
-  if (!ok) {
-    const reported = errors.slice(0, MAX_REPORTED_ISSUES).map((issue) => {
-      return formatIssue(issue);
-    });
-    if (errors.length > reported.length) {
-      reported.push(`…and ${errors.length - reported.length} more`);
-    }
-    throw new Error(reported.join('\n'));
-  }
-
-  return { config, chars };
-}
-
-// ensures there is always a trailing empty layer so the editor shows an
-// empty cell ready to start a new layer
-function withTrailingEmptyLayer(layers: CharLayers): CharLayers {
-  return [...layers.filter((layer) => layer.length), []];
-}
-
-// removes empty layers of font definition
-function cleanFontForExport(fontDefinition: FontDefinition) {
-  const orderedChars = Object.keys(fontDefinition).sort((a, b) => {
-    return a.charCodeAt(0) - b.charCodeAt(0);
-  });
-
-  return orderedChars.reduce((acc: FontDefinition, key) => {
-    acc[key] = fontDefinition[key].filter((layer) => layer.length);
-    return acc;
-  }, {});
-}
-
-function Editor({
-  value,
-  onChange,
-}: {
-  value: CharLayer;
-  onChange: (arg0: CharLayer) => void;
-}) {
-  const EDITOR_ADVANCE = window.innerWidth > 1000;
-  const EDITOR_DOT_SIZE = EDITOR_ADVANCE ? 24 : 16;
-  const EDITOR_GAP = EDITOR_ADVANCE ? 50 : 26;
-
-  const EDITOR_CONTROLS_HEIGHT = 24;
-
-  // The grid starts above the cap row: accents live in the mark band, so the
-  // rows a composed glyph like "Á" uses have to be drawable too.
-  const gridTop = MARK_ROWS * EDITOR_GAP;
-
-  const style = {
-    marginTop: EDITOR_DOT_SIZE / 2,
-    marginLeft: EDITOR_DOT_SIZE / 2,
-    marginRight: EDITOR_DOT_SIZE / 2,
-    marginBottom: EDITOR_DOT_SIZE / 2 + EDITOR_CONTROLS_HEIGHT,
-    height: gridTop + (DOTSY + (EDITOR_ADVANCE ? 1 : 0)) * EDITOR_GAP,
-    width: DOTSX * EDITOR_GAP,
-  };
-
-  return (
-    <div className="editor" style={style}>
-      {new Array(DOTSX + 1).fill('').map((_1, x) => {
-        return new Array(DOTSY + 1).fill('').map((_1, y) => {
-          const currentDotId = `${x},${y}`;
-          return (
-            <div
-              onClick={() => {
-                onChange([...value, [x, y]]);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onChange([]);
-              }}
-              key={currentDotId}
-              style={{
-                height: EDITOR_DOT_SIZE,
-                width: EDITOR_DOT_SIZE,
-                backgroundColor: includes(value, [x, y]) ? '#fff' : '#808080',
-                left: x * EDITOR_GAP,
-                top: gridTop + y * EDITOR_GAP,
-              }}
-              className="editor-dot"
-            />
-          );
-        });
-      })}
-
-      {EDITOR_ADVANCE &&
-        new Array(DOTSX * 2 + 3).fill('').map((_1, x) => {
-          return new Array((DOTSY + 1 + MARK_ROWS) * 2 + 1).fill('').map((_1, y) => {
-            const x1 = x / 2 - 0.5;
-            const y1 = y / 2 - MARK_ROWS;
-
-            // do not ovrelap with bigger dots, which only cover the cap box
-            if (x1 === Math.round(x1) && y1 === Math.round(y1)) {
-              if (y1 >= 0 && y1 <= DOTSY) {
-                return null;
-              }
-            }
-            if (x1 === -0.5) {
-              return null;
-            }
-            if (x1 === DOTSX + 0.5) {
-              return null;
-            }
-
-            const currentDotId = `${x1},${y1}`;
-            return (
-              <div
-                onClick={() => {
-                  onChange([...value, [x1, y1]]);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  onChange([]);
-                }}
-                key={currentDotId}
-                style={{
-                  height: EDITOR_DOT_SIZE - 8,
-                  width: EDITOR_DOT_SIZE - 8,
-                  backgroundColor: includes(value, [x1, y1])
-                    ? '#fff'
-                    : '#808080',
-                  left: x1 * EDITOR_GAP,
-                  top: gridTop + y1 * EDITOR_GAP,
-                }}
-                className="editor-dot"
-              />
-            );
-          });
-        })}
-
-      <svg
-        viewBox={`-1 ${-1 - MARK_ROWS} ${DOTSX + 2} ${DOTSY + 2 + MARK_ROWS}`}
-        style={{
-          position: 'absolute',
-          top: -EDITOR_GAP,
-          left: -EDITOR_GAP,
-          height: (DOTSY + 2 + MARK_ROWS) * EDITOR_GAP,
-          width: (DOTSX + 2) * EDITOR_GAP,
-        }}
-      >
-        <polyline
-          points={value.map((dot) => dot.join(',')).join(' ')}
-          strokeWidth={EDITOR_DOT_SIZE / 4}
-          fill="none"
-          stroke="#fff"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div className="editor-controls">
-        <button
-          onClick={() => {
-            onChange([]);
-          }}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
+/** The font with its characters in code order, so two exports diff cleanly. */
+function sortedForExport(font: FontDefinition): FontDefinition {
+  return Object.fromEntries(
+    Object.keys(font)
+      .sort((a, b) => a.charCodeAt(0) - b.charCodeAt(0))
+      .map((char) => [char, font[char]])
   );
 }
 
-function EditorContainer({
-  onChange,
-  editingChar,
-  onChangeEditingChar,
-}: {
-  onChange: () => void;
-  editingChar: string;
-  onChangeEditingChar: (arg0: string) => void;
-}) {
-  const [layers, layersSet] = useState(STATE.font[editingChar]);
+/** What an alert appends after its headline, when the error says anything. */
+function errorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? `\n\n${error.message}` : '';
+}
+
+// The preview is the real font: every change rebuilds the .otf the Export menu
+// would download and hands those bytes to the browser, so spacing, kerning and
+// rasterization on screen are the shipped ones rather than a drawing of them.
+//
+// One em is sized so a grid column keeps the 4px it had when the preview was
+// drawn as SVG strokes: the 640-unit character box spans 8px.
+const PREVIEW_FONT_SIZE = UNITS_PER_EM / 80;
+
+let liveFontCount = 0;
+
+/**
+ * Build the font for the current glyphs and config and register it with the
+ * document. Returns the family name to render with, or null before the first
+ * build lands.
+ */
+function useLiveFont(font: FontDefinition, config: FontConfig): string | null {
+  const [family, familySet] = useState<string | null>(null);
+  const faces = useRef<FontFace[]>([]);
+
+  // Only what shapes the outlines and spacing, as one comparable value.
+  // Renaming the font or its designer must not rebuild on every keystroke.
+  const geometry = JSON.stringify(config, [...GEOMETRY_KEYS]);
 
   useEffect(() => {
-    let newEditingBase = [[[0, 0]]];
+    let cancelled = false;
 
-    if (STATE.font[editingChar]) {
-      newEditingBase = STATE.font[editingChar];
-    }
-
-    layersSet(withTrailingEmptyLayer(newEditingBase as CharLayers));
-  }, [editingChar, layersSet]);
-
-  function onChangeEditor(layerIdx: number, val: CharLayer) {
-    let charLayersCopy: CharLayers = JSON.parse(JSON.stringify(layers));
-    charLayersCopy[layerIdx] = val.filter((el) => el.length);
-
-    // prevent adding the same point twice
-    if (charLayersCopy[layerIdx].slice(-2).length === 2) {
-      if (
-        charLayersCopy[layerIdx].slice(-2)[0].join(',') ===
-        charLayersCopy[layerIdx].slice(-2)[1].join(',')
-      ) {
-        charLayersCopy[layerIdx] = charLayersCopy[layerIdx].slice(0, -2);
+    // Off the event that caused it, so a slider drag paints its own thumb
+    // first and a burst of changes builds once.
+    const timer = setTimeout(async () => {
+      try {
+        const bytes = buildFontBytes(font, {
+          ...JSON.parse(geometry),
+          name: 'Brutalita Preview',
+        });
+        // A fresh family per build: the browser caches shaping per family, and
+        // swapping the name is what makes it lay the text out again.
+        const name = `brutalita-preview-${++liveFontCount}`;
+        const face = new FontFace(name, bytes.slice().buffer);
+        await face.load();
+        if (cancelled) return;
+        document.fonts.add(face);
+        faces.current.push(face);
+        familySet(name);
+      } catch (error) {
+        // A half-drawn glyph can fail to build. Keep showing the last font
+        // that did rather than dropping the preview to a fallback.
+        console.error(error);
       }
-    }
+    }, 0);
 
-    charLayersCopy = withTrailingEmptyLayer(charLayersCopy);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [font, geometry]);
 
-    layersSet(charLayersCopy);
-    STATE.font[editingChar] = charLayersCopy;
-    onChange();
-  }
+  // Retire superseded builds only once the new family is on screen, so there
+  // is never a frame with no font to draw.
+  useEffect(() => {
+    const stale = faces.current.slice(0, -1);
+    faces.current = faces.current.slice(-1);
+    for (const face of stale) document.fonts.delete(face);
+  }, [family]);
 
-  return (
-    <div className="editor-container">
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div className="editor-input-container">
-          <div className="editor-input-label">Editing</div>
-          <input
-            className="editor-input"
-            value={String(editingChar)}
-            onChange={(e) => {
-              let newChar = '';
-              try {
-                newChar = e.target.value.slice(-1)[0];
-              } catch (e) {
-                console.error(e);
-              }
-              if (newChar) {
-                onChangeEditingChar(newChar);
-              }
-            }}
-          />
-        </div>
-        <div className="editor-input-container">
-          <div className="editor-input-label">Preview</div>
-          <Key custom={true} path={layers} fontSize={8 * 5} strokeWidth={4} />
-        </div>
-      </div>
-      {layers.map((_1, layerIdx) => {
-        return (
-          <Editor
-            key={layerIdx}
-            value={layers[layerIdx]}
-            onChange={(val) => {
-              onChangeEditor(layerIdx, val);
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function Write({
-  message,
-  fontWeight,
-}: {
-  message: string;
-  fontWeight: FontWeightType;
-}) {
-  return (
-    <Fragment>
-      {message.split('').map((char, keyIdx) => {
-        if (char === '\n') {
-          return (
-            <Fragment key={keyIdx}>
-              <div style={{ height: 30, width: 0 }} />
-              <div className="type-break" />
-            </Fragment>
-          );
-        }
-
-        return (
-          <Key
-            key={keyIdx}
-            char={char}
-            path={STATE.font[char]}
-            strokeWidth={editorStrokeWidth(fontWeight)}
-          />
-        );
-      })}
-    </Fragment>
-  );
+  return family;
 }
 
 function App() {
@@ -381,97 +164,54 @@ function App() {
     fontConfigReducer,
     INITIAL_FONT_CONFIG
   );
+  const [font, fontSet] = useState(INITIAL_FONT);
   const [editingChar, editingCharSet] = useState('Q');
-  const [textAreaHeight, textAreaHeightSet] = useState(window.innerHeight);
-  const [charWidth, charWidthSet] = useState(64);
   const [text, textSet] = useState(DEFAULT_TEXT);
-  const [fontChangeTrack, fontChangeTrackSet] = useState(new Date().getTime());
-  const [fontLoadTrack, fontLoadTrackSet] = useState(new Date().getTime() + 1);
 
-  function onFontChange() {
-    fontChangeTrackSet(new Date().getTime());
-  }
+  const previewFamily = useLiveFont(font, fontConfig);
 
-  useEffect(() => {
-    const typeEl = document.querySelector('.type') as HTMLElement;
-    const { height } = typeEl.getBoundingClientRect();
-    textAreaHeightSet(height + 200);
-  }, [text]);
-
-  useEffect(() => {
-    function resize() {
-      // Size the preview to the main content area (the sidebar inset), which
-      // already excludes the shadcn sidebar width on desktop.
-      const insetEl = document.querySelector(
-        '[data-slot="sidebar-inset"]'
-      ) as HTMLElement | null;
-
-      const availableWidth = insetEl
-        ? insetEl.getBoundingClientRect().width
-        : (
-            document.querySelector('body') as HTMLElement
-          ).getBoundingClientRect().width;
-
-      const availableChars = Math.min(
-        Math.floor((availableWidth - 32) / 14),
-        160
-      );
-
-      charWidthSet(availableChars);
-
-      window.requestAnimationFrame(() => {
-        const typeEl = document.querySelector('.type') as HTMLElement;
-        const { height } = typeEl.getBoundingClientRect();
-        textAreaHeightSet(height + 200);
-      });
+  async function onExportOtf() {
+    try {
+      await downloadFont(font, fontConfig);
+    } catch (e) {
+      // A glyph the builder cannot outline fails the whole export; say so
+      // rather than leaving the button looking as if it did nothing.
+      console.error(e);
+      alert(`Unable to build the font.${errorDetail(e)}`);
     }
-    window.addEventListener('resize', resize);
-    resize();
-    return () => window.removeEventListener('resize', resize);
-  }, []);
-
-  function onExportOtf() {
-    downloadFont(STATE.font, fontConfig);
   }
 
   function onExportJson() {
     downloadBlob(
-      `brutalita-${new Date().getTime()}.json`,
+      `brutalita-${Date.now()}.json`,
       JSON.stringify(
-        {
-          config: fontConfig,
-          chars: cleanFontForExport(STATE.font),
-        },
+        { config: fontConfig, chars: sortedForExport(font) },
         null,
         2
-      )
+      ),
+      'application/json'
     );
   }
 
   async function onImport() {
     try {
-      const blob = await uploadBlob();
-      let json = JSON.parse(blob[0]);
+      const [file] = await uploadBlob();
+      // The picker was dismissed: nothing to load, and nothing to report.
+      if (file === undefined) return;
+      let json = JSON.parse(file);
 
-      // Old Format Support
-      if (!json.config) {
-        json = {
-          chars: json,
-          config: { ...DEFAULT_FONT_CONFIG },
-        };
+      // Old Format Support: a bare map of characters, with no config.
+      if (json && typeof json === 'object' && !Array.isArray(json) && !json.config) {
+        json = { chars: json, config: { ...DEFAULT_FONT_CONFIG } };
       }
 
       const { config, chars } = parseFont(json);
-
-      STATE.font = chars;
+      fontSet(chars);
       fontConfigDispatch({ type: 'reset', payload: config });
-      fontLoadTrackSet(new Date().getTime());
-      fontChangeTrackSet(new Date().getTime() + 1);
     } catch (e) {
       // parseFont throws with the specific validation errors; show them rather
       // than a bare "unable to load".
-      const detail = e instanceof Error && e.message ? `\n\n${e.message}` : '';
-      alert(`Unable to load font file.${detail}`);
+      alert(`Unable to load font file.${errorDetail(e)}`);
     }
   }
 
@@ -486,32 +226,44 @@ function App() {
           onImport={onImport}
         />
         <div className="scroller">
-          <textarea
-            style={{ height: textAreaHeight, width: 14 * charWidth }}
-            spellCheck="false"
-            value={text}
-            onChange={(e) => {
-              textSet(e.target.value);
-            }}
-          />
-
+          {/* The mirror holds the same text in the same font and gives the
+              area its height; the textarea fills it, so the page scrolls
+              instead of the field. */}
           <div
-            key={fontChangeTrack}
             className="type"
-            style={{ width: 14 * charWidth }}
+            style={{
+              fontFamily: previewFamily
+                ? `"${previewFamily}", monospace`
+                : undefined,
+              fontSize: PREVIEW_FONT_SIZE,
+              visibility: previewFamily ? 'visible' : 'hidden',
+            }}
           >
-            <Write message={text} fontWeight={fontConfig.weight} />
+            <div className="type-mirror" aria-hidden="true">
+              {`${text}\n`}
+            </div>
+            <textarea
+              spellCheck="false"
+              aria-label="Preview text"
+              value={text}
+              onChange={(e) => {
+                textSet(e.target.value);
+              }}
+            />
           </div>
         </div>
       </SidebarInset>
 
       <AppSidebar
+        fontConfig={fontConfig}
+        fontConfigDispatch={fontConfigDispatch}
         editorView={
-          <EditorContainer
-            key={fontLoadTrack}
-            editingChar={editingChar}
-            onChangeEditingChar={editingCharSet}
-            onChange={onFontChange}
+          <GlyphEditor
+            char={editingChar}
+            onChangeChar={editingCharSet}
+            layers={font[editingChar]}
+            onChange={(layers) => fontSet({ ...font, [editingChar]: layers })}
+            config={fontConfig}
           />
         }
       />

@@ -3,14 +3,14 @@ import { test } from 'node:test';
 
 import Opentype from 'opentype.js';
 
-import { buildFontBytes, fontKerning } from './font-maker';
+import { buildFontBytes, fontLayout } from './font-maker';
 import { validateFontSource } from './font-validate';
 import source from './font.json';
 
 const { chars, config } = validateFontSource(source);
 
 test('proportional builds ship the calculated pairs as GPOS kerning', () => {
-  const pairs = fontKerning(chars, { ...config, weight: 400, monospace: false });
+  const pairs = fontLayout(chars, { ...config, weight: 400, monospace: false }).kerning;
   assert.ok(pairs.length > 0);
   const expected = pairs.find(({ left, right }) => left === 'A' && right === 'V');
   assert.ok(expected, 'the optical profiles should identify AV');

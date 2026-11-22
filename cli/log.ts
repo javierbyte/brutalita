@@ -64,6 +64,11 @@ export function createLogger(
   };
 }
 
+/** "1 error", "3 errors". */
+export function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 /** Human-readable byte count for build output lines. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -13,10 +13,8 @@ import {
   MenubarLabel,
 } from '@/components/ui/menubar';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 
 import { SHIPPED_WEIGHTS, styleName } from '@/src/weights';
 import type { FontConfig } from '@/src/types';
@@ -29,15 +27,6 @@ type AppMenubarProps = {
   onExportJson: () => void;
   onImport: () => void;
 };
-
-// macOS-style segmented control: inset track + a clearly raised selected pill.
-const segmentTrack =
-  'w-full rounded-lg bg-input p-1 shadow-[inset_0_1px_2px_rgb(0_0_0/0.3)]';
-const segmentItem = cn(
-  'flex-1 rounded-md border-0 bg-transparent text-muted-foreground shadow-none',
-  'hover:bg-foreground/5 hover:text-foreground',
-  'data-[state=on]:bg-[#5b5b5b] data-[state=on]:text-white data-[state=on]:shadow-sm'
-);
 
 const ABOUT_LINKS = [
   { href: 'https://javier.xyz', label: 'Made by Javier Bórquez' },
@@ -100,18 +89,6 @@ export function AppMenubar({
                 Brutalita is an experimental font and editor. Create and
                 download your own font.
               </p>
-              <p>
-                Built with{' '}
-                <a
-                  href="https://opentype.js.org/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2 hover:text-foreground"
-                >
-                  OpenType.js
-                </a>{' '}
-                to generate the .otf files.
-              </p>
             </div>
             <MenubarSeparator />
             {ABOUT_LINKS.map((link) => (
@@ -141,7 +118,7 @@ export function AppMenubar({
             >
               <Field label="Font name">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.name}
                   spellCheck={false}
                   onChange={(event) =>
@@ -153,60 +130,9 @@ export function AppMenubar({
                 />
               </Field>
 
-              <Field label="Weight">
-                <ToggleGroup
-                  type="single"
-                  size="sm"
-                  spacing={1}
-                  value={String(fontConfig.weight)}
-                  onValueChange={(value) => {
-                    if (value)
-                      fontConfigDispatch({
-                        type: 'change-weight',
-                        payload: value,
-                      });
-                  }}
-                  className={segmentTrack}
-                >
-                  {SHIPPED_WEIGHTS.map((weight) => (
-                    <ToggleGroupItem
-                      key={weight}
-                      value={String(weight)}
-                      className={segmentItem}
-                    >
-                      {weight}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Field>
-
-              <Field label="Width">
-                <ToggleGroup
-                  type="single"
-                  size="sm"
-                  spacing={1}
-                  value={fontConfig.monospace ? 'mono' : 'prop'}
-                  onValueChange={(value) => {
-                    if (value)
-                      fontConfigDispatch({
-                        type: 'change-width',
-                        payload: value === 'mono',
-                      });
-                  }}
-                  className={segmentTrack}
-                >
-                  <ToggleGroupItem value="mono" className={segmentItem}>
-                    Monospace
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="prop" className={segmentItem}>
-                    Proportional
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </Field>
-
               <Field label="Designer">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.designer ?? ''}
                   spellCheck={false}
                   onChange={(event) =>
@@ -220,7 +146,7 @@ export function AppMenubar({
 
               <Field label="Designer URL">
                 <Input
-                  className="h-8"
+                  className="h-8 dark:bg-background"
                   value={fontConfig.designerURL ?? ''}
                   spellCheck={false}
                   onChange={(event) =>

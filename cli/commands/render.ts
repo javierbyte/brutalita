@@ -3,7 +3,7 @@ import { basename, extname } from 'node:path';
 import { renderTextToSVG } from '../../src/svg-export';
 
 import { asPositive, UsageError } from '../args';
-import type { CommandSpec } from '../args';
+import type { CommandSpec, ValuesOf } from '../args';
 import { GLOBAL_OPTIONS, SourceError } from '../context';
 import type { CommandContext } from '../context';
 import { isStdout, resolveText, writeOutput, writeStdout } from '../io';
@@ -95,20 +95,7 @@ export const spec = {
   ],
 } satisfies CommandSpec;
 
-type Values = {
-  text?: string;
-  'text-file'?: string;
-  out?: string;
-  padding?: string;
-  color?: string;
-  background?: string;
-  'stroke-width'?: string;
-  width?: string;
-  weight?: string;
-  mono?: boolean;
-  'fail-on-missing'?: boolean;
-  strict?: boolean;
-};
+type Values = ValuesOf<typeof spec>;
 
 export function run(
   values: Values,
@@ -145,6 +132,8 @@ export function run(
   }
 
   const { svg, missing } = renderTextToSVG(source.chars, text, {
+    ...config,
+    weight,
     padding: values.padding ? asPositive(values.padding, '--padding') : undefined,
     color: values.color,
     background: values.background,
@@ -152,10 +141,6 @@ export function run(
     strokeWidth: values['stroke-width']
       ? asPositive(values['stroke-width'], '--stroke-width')
       : undefined,
-    weight,
-    height: config.height,
-    // The old CLI dropped this, so proportional fonts still rendered monospaced.
-    monospace: config.monospace,
   });
 
   if (isStdout(values.out)) {

@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 
-import Opentype from 'opentype.js';
-
-import { buildFont, fontMetrics, fontName } from '../../src/font-maker';
+import { readFont } from '../../packages/otf-writer/src';
+import type { FontSummary } from '../../packages/otf-writer/src';
+import { fontLayout, fontMetrics, fontName } from '../../src/font-maker';
 import { styleName } from '../../src/weights';
 import { PRINTABLE_ASCII } from '../../src/font-validate';
 
 import { UsageError } from '../args';
-import type { CommandSpec } from '../args';
+import type { CommandSpec, ValuesOf } from '../args';
 import { GLOBAL_OPTIONS } from '../context';
 import type { CommandContext } from '../context';
 import { writeStdout } from '../io';
@@ -31,7 +31,7 @@ export const spec = {
   ],
 } satisfies CommandSpec;
 
-type Values = { coverage?: boolean };
+type Values = ValuesOf<typeof spec>;
 
 function emit(
   ctx: CommandContext,
@@ -50,40 +50,20 @@ function emit(
 
 // Reading a built .otf back is the way to verify a build without a font editor.
 function describeOtf(path: string, values: Values, ctx: CommandContext): number {
-  const buffer = readFileSync(path);
-  let font: Opentype.Font;
+  let font: FontSummary;
   try {
-    font = Opentype.parse(
-      buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
-    );
+    font = readFont(readFileSync(path));
   } catch (err) {
     throw new UsageError(`could not parse ${path}: ${(err as Error).message}`);
   }
 
-  // opentype.js v2 groups names by platform (unicode / macintosh / windows);
-  // any of them carries the same strings, so take the first that has one.
-  const names = font.names as unknown as Record<
-    string,
-    Record<string, Record<string, string>>
-  >;
-  const readName = (key: string): string | undefined => {
-    for (const platform of ['unicode', 'windows', 'macintosh']) {
-      const value = names[platform]?.[key]?.en;
-      if (value) return value;
-    }
-    return undefined;
-  };
-
-  const family = readName('fontFamily') ?? '(unnamed)';
-  const style = readName('fontSubfamily') ?? '(none)';
-  const designer = readName('designer');
-  const fontVersion = readName('version');
-
-  const covered: string[] = [];
-  for (let code = 0; code <= 0xffff; code++) {
-    const glyphIndex = font.charToGlyphIndex(String.fromCharCode(code));
-    if (glyphIndex > 0) covered.push(String.fromCharCode(code));
-  }
+  // The typographic names first: names 1 and 2 file every weight but Regular
+  // and Bold as a family of its own ("Brutalita Light" / "Regular").
+  const family = font.names.get(16) ?? font.names.get(1) ?? '(unnamed)';
+  const style = font.names.get(17) ?? font.names.get(2) ?? '(none)';
+  const designer = font.names.get(9);
+  const fontVersion = font.names.get(5);
+  const covered = font.codePoints.map((code) => String.fromCodePoint(code));
 
   const rows: [string, string][] = [
     ['file', path],
@@ -91,11 +71,11 @@ function describeOtf(path: string, values: Values, ctx: CommandContext): number 
     ['style', style],
     ['version', fontVersion ?? '(unset)'],
     ['designer', designer ?? '(none)'],
-    ['weightClass', String(font.tables.os2?.usWeightClass ?? '(unset)')],
+    ['weightClass', String(font.weightClass ?? '(unset)')],
     ['unitsPerEm', String(font.unitsPerEm)],
     ['ascender', String(font.ascender)],
     ['descender', String(font.descender)],
-    ['glyphs', String(font.glyphs.length)],
+    ['glyphs', String(font.glyphCount)],
     ['covered', `${covered.length} characters`],
   ];
   if (values.coverage) {
@@ -109,11 +89,11 @@ function describeOtf(path: string, values: Values, ctx: CommandContext): number 
     style,
     version: fontVersion ?? null,
     designer: designer ?? null,
-    weightClass: font.tables.os2?.usWeightClass ?? null,
+    weightClass: font.weightClass ?? null,
     unitsPerEm: font.unitsPerEm,
     ascender: font.ascender,
     descender: font.descender,
-    glyphs: font.glyphs.length,
+    glyphs: font.glyphCount,
     covered: values.coverage ? covered : covered.length,
   });
   return 0;
@@ -128,7 +108,7 @@ function describeSource(
   const { config, chars } = source;
   const metrics = fontMetrics(config);
 
-  const charKeys = Object.keys(chars);
+  const charKeys = Object.keys(chars).sort();
   let layers = 0;
   let points = 0;
   for (const char of charKeys) {
@@ -138,10 +118,16 @@ function describeSource(
 
   // Advance widths come out of the real build, so `info` reports what will
   // actually ship rather than an approximation.
-  const font = buildFont(chars, config);
-  const advances = font.glyphs.length
-    ? Array.from({ length: font.glyphs.length }, (_, i) => font.glyphs.get(i).advanceWidth ?? 0)
-    : [0];
+  const layout = fontLayout(chars, config);
+  const advances = [
+    metrics.monospaceAdvance, // .notdef
+    ...Object.keys(chars).map(
+      (char) => layout.glyphs.get(char)?.advance ?? layout.spaceAdvance
+    ),
+  ];
+  const advance = config.monospace
+    ? { fixed: metrics.monospaceAdvance }
+    : { min: Math.min(...advances), max: Math.max(...advances) };
   const missing = PRINTABLE_ASCII.filter((char) => !(char in chars));
 
   const rows: [string, string][] = [
@@ -158,9 +144,9 @@ function describeSource(
     ['descender', String(metrics.descender)],
     [
       'advance',
-      config.monospace
-        ? `${metrics.monospaceAdvance} (fixed)`
-        : `${Math.min(...advances)}–${Math.max(...advances)}`,
+      'fixed' in advance
+        ? `${advance.fixed} (fixed)`
+        : `${advance.min}–${advance.max}`,
     ],
     [
       'ASCII',
@@ -172,7 +158,7 @@ function describeSource(
     ],
   ];
   if (values.coverage) {
-    rows.push(['coverage', charKeys.sort().join('')]);
+    rows.push(['coverage', charKeys.join('')]);
   }
 
   emit(ctx, rows, {
@@ -187,11 +173,9 @@ function describeSource(
     layers,
     points,
     metrics,
-    advance: config.monospace
-      ? { fixed: metrics.monospaceAdvance }
-      : { min: Math.min(...advances), max: Math.max(...advances) },
+    advance,
     missingAscii: missing,
-    coverage: values.coverage ? charKeys.sort() : undefined,
+    coverage: values.coverage ? charKeys : undefined,
     warnings: source.warnings.length,
   });
   return 0;

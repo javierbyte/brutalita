@@ -4,7 +4,7 @@
 
 Brutalita is an experimental font and font editor. Draw in your browser, download OTF.
 
-The name means "little brutal" in spanish. Made with SVG and Opentype.JS.
+The name means "little brutal" in spanish.
 
 - **[brutalita.com](https://brutalita.com/)** — the editor
 - **[brutalita.com/demo](https://brutalita.com/demo)** — specimens at several sizes
@@ -41,7 +41,7 @@ Mono files are named `Brutalita Mono-{Style}`, with the space URL-encoded:
 
 Both families cover printable ASCII, the Spanish set — `ÁÉÍÑÓÚÜ áéíñóúü ¿ ¡` —
 and `↕`. Accents sit in their own band above the cap line, so a line of accented
-capitals still fits its line box; `line-height: normal` is 1.24em.
+capitals still fits its line box; `line-height: normal` is 1.25em.
 
 ## CLI
 
@@ -55,6 +55,29 @@ The source is the same JSON the editor exports — `{ "config": {...}, "marks": 
 "chars": {...} }` — where each glyph is a list of polylines on a 2×4 half-step grid.
 With no source argument the CLI looks for `./font.json`, then `./src/font.json`, then
 falls back to the copy of Brutalita it bundles.
+
+**Stroke** in the Style tab is the pen, saved as `config.stroke`: `round` (the
+default) rounds every end, corner and dot by half the stroke; `sharp` cuts ends
+flat, brings corners to a point and makes dots square.
+
+The glyphs draw their curves as chamfers. **Curves** in the Style tab chooses
+how those are rendered, saved as `config.corners`: `chamfer` (the default) keeps
+them as drawn, `round` (Circular) turns each chamfer and shallow bend into an arc, and
+`continuous` into a curve that eases in and out of its straights. Right angles
+and points stay sharp, so "E" and "V" keep their corners while "O" turns round.
+`config.cornerRadius` sets the size of the curves from `20` to `100` (the
+default), as a percent of one grid step; at `100` an "O" is a pill. Both apply
+to the editor previews, OTF builds, and SVG renders.
+
+The editor's text preview is the font itself: each change rebuilds the OTF and
+loads it into the page. The sidebar's **Style** tab holds weight, slant, stroke,
+curves, width, and the spacing of the proportional family, saved in font units as
+`config.spacing` (the gap between two flat-sided letters, default `480`),
+`config.wordSpacing` (the width of the space, default one and a half letter
+gaps) and `config.kerning` (the most a pair may be pulled together, default
+`80`; `0` turns pair kerning off). All three move in steps of 80 units, one
+pixel at 25.6px, so text set at that size or a multiple of it stays on the
+pixel grid.
 
 A glyph can also be built from another instead of drawn, either by taking an
 accent from `marks` or by turning the letter around:
@@ -113,13 +136,17 @@ pnpm typecheck
 pnpm build:cli   # bundle the CLI to dist/cli/brutalita.mjs
 ```
 
+The `.otf` files are written by [`packages/otf-writer`](packages/otf-writer),
+a dependency-free OpenType writer that imports nothing from the rest of the
+repository.
+
 The built fonts and the banner are committed: the `.otf` files are the golden
 reference for the build tests, and GitHub serves the banner above straight from
 the repo. `pnpm assets` rebuilds them byte-for-byte, so a clean `git status`
 afterwards means they are current.
 
 To release a new version of the typeface, bump `config.version` in `src/font.json`
-and the `--timestamp` in `fonts:otf`, then run `pnpm assets`.
+and `RELEASED` in `scripts/build-fonts.ts`, then run `pnpm assets`.
 
 ## License
 

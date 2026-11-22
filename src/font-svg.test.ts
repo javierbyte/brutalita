@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import Opentype from 'opentype.js';
-import { buildFontBytes, fontMetrics, KERNING } from './font-maker';
+import { buildFontBytes, fontMetrics, CELL_BEARING } from './font-maker';
 import { validateFontSource } from './font-validate';
 import source from './font.json';
+import { renderTextToSVG } from './svg-export';
 
 const { chars, config } = validateFontSource(source);
 
@@ -55,7 +56,7 @@ test('serialized font ink matches the original SVG strokes across the character 
         if (command.type === 'M') rings.push([]);
         if (command.type === 'M' || command.type === 'L') {
           rings[rings.length - 1].push({
-            x: (command.x - metrics.inkOffset - KERNING / 2 - metrics.stem / 2) / 80,
+            x: (command.x - metrics.inkOffset - CELL_BEARING - metrics.stem / 2) / 80,
             y: (metrics.capHeight - metrics.stem / 2 - command.y) / 80,
           });
         }
@@ -70,6 +71,50 @@ test('serialized font ink matches the original SVG strokes across the character 
             `${weight} ${JSON.stringify(char)} differs from SVG at ${x},${y}`);
         }
       }
+    }
+  }
+});
+
+test('proportional SVG text is spaced exactly as the built font spaces it', () => {
+  // x of the first point of every stroke, in font units.
+  const strokeStarts = (text: string, options: object) =>
+    [...renderTextToSVG(chars, text, { monospace: false, ...options }).svg.matchAll(
+      /M (-?[\d.]+),/g
+    )].map((match) => Number(match[1]) * 80);
+
+  for (const weight of [100, 400, 600, 900]) {
+    for (const options of [{}, { spacing: 320, wordSpacing: 400, kerning: 160 }]) {
+      const cfg = { ...config, weight, monospace: false, ...options };
+      const font = Opentype.parse(buildFontBytes(chars, cfg).slice().buffer);
+      const advance = (char: string) => font.charToGlyph(char).advanceWidth ?? 0;
+      const kern = (left: string, right: string) =>
+        font.getKerningValue(font.charToGlyph(left), font.charToGlyph(right));
+      const label = `${weight} ${JSON.stringify(options)}`;
+
+      // The same glyph twice: its second copy starts one advance, plus any
+      // kerning between the two, after its first.
+      for (const char of ['H', 'T', 'o', 'A', 'l']) {
+        const starts = strokeStarts(char + char, { weight, ...options });
+        const offset = starts[starts.length / 2] - starts[0];
+        assert.ok(
+          Math.abs(offset - advance(char) - kern(char, char)) < 1e-6,
+          `${label} ${char}${char}: ${offset}`
+        );
+      }
+
+      // Across a space, and across a pair the font kerns.
+      const spaced = strokeStarts('H H', { weight, ...options });
+      assert.ok(
+        Math.abs(spaced[spaced.length / 2] - spaced[0] - advance('H') - advance(' ')) < 1e-6,
+        `${label} word space`
+      );
+      const pair = strokeStarts('TT', { weight, ...options })[0];
+      const kerned = strokeStarts('ATT', { weight, ...options });
+      const first = kerned.length - 2 * (strokeStarts('T', { weight, ...options }).length);
+      assert.ok(
+        Math.abs(kerned[first] - pair - advance('A') - kern('A', 'T')) < 1e-6,
+        `${label} AT`
+      );
     }
   }
 });

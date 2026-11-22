@@ -33,12 +33,18 @@ export type CommandSpec = {
 };
 
 // parseArgs produces booleans for boolean options and strings for string ones;
-// absent flags are undefined. Each command narrows this to its own shape — the
-// spec is the single source of truth, so a mismatch shows up immediately in use.
+// absent flags are undefined.
 export type ParsedValues = Record<
   string,
   string | boolean | string[] | boolean[] | undefined
 >;
+
+/** The flags a command reads, typed from the options its spec declares. */
+export type ValuesOf<Spec extends { options: Record<string, OptionSpec> }> = {
+  [Name in keyof Spec['options']]?: Spec['options'][Name]['type'] extends 'boolean'
+    ? boolean
+    : string;
+};
 
 export type ParseResult = {
   values: ParsedValues;
@@ -88,17 +94,12 @@ export function parseCommandArgs(
 ): ParseResult {
   const { args, negated } = expandNegations(argv, spec.options);
 
-  const parseOptions: Record<
-    string,
-    { type: 'string' | 'boolean'; short?: string; multiple?: boolean }
-  > = {};
-  for (const [name, option] of Object.entries(spec.options)) {
-    parseOptions[name] = {
-      type: option.type,
-      ...(option.short ? { short: option.short } : {}),
-      ...(option.multiple ? { multiple: true } : {}),
-    };
-  }
+  const parseOptions = Object.fromEntries(
+    Object.entries(spec.options).map(([name, { type, short, multiple }]) => [
+      name,
+      { type, ...(short ? { short } : {}), ...(multiple ? { multiple } : {}) },
+    ])
+  );
 
   let parsed;
   try {

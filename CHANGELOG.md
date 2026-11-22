@@ -1,3 +1,20 @@
+# 0.10.0 — 2026-11-21
+
+- New glyph editor: every stroke on one grid. Tap to draw, drag a point to move
+  it, drag a line to add a point. Undo and redo per glyph.
+- The preview text is set in the built font.
+- New style options, saved in `config`: `stroke` (round or sharp), `corners`
+  and `cornerRadius` (chamfer, circular or continuous), `slant` (0–20°), and
+  `spacing`, `wordSpacing` and `kerning`.
+- `.otf` files are written by `packages/otf-writer`, which has no dependencies.
+  The files are about a quarter smaller; the CLI bundle is 219 kB, down from
+  783 kB.
+- Line box: 2080 above the baseline, 480 below. `line-height: normal` is 1.25em.
+- Underline, subscript and superscript metrics sit on the 160-unit lattice.
+- Name records are written once, for Windows. OS/2 is version 4.
+- Fixed: a family name outside ASCII built an invalid font.
+- `pnpm fonts` builds both families, as OTF and WOFF2.
+
 # 0.9.1 — 2026-09-13
 
 - Added `↕`.
